@@ -15,6 +15,9 @@
 #include "theft.h"
 #include <cyan/common.h>
 
+/* External test functions from component test files */
+extern int run_option_tests(theft_seed seed);
+
 /*============================================================================
  * Test Configuration
  *============================================================================*/
@@ -150,9 +153,12 @@ static void run_all_tests(void) {
         theft_get_builtin_type_info(THEFT_BUILTIN_bool)
     );
 
-    /* Component tests will be added here as they are implemented */
-    /* Each component (option, result, vector, etc.) will have its own
-     * test file that registers tests with this runner */
+    /* Option type tests */
+    theft_seed seed = g_seed ? g_seed : theft_seed_of_time();
+    int option_failures = run_option_tests(seed);
+    g_results.failed += option_failures;
+    g_results.passed += (4 - option_failures);  /* 4 option tests */
+    g_results.total += 4;
 
     printf("\n");
 }
