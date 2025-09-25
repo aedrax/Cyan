@@ -17,6 +17,7 @@
 
 /* External test functions from component test files */
 extern int run_option_tests(theft_seed seed);
+extern int run_result_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -158,6 +159,12 @@ static void run_all_tests(void) {
     int option_failures = run_option_tests(seed);
     g_results.failed += option_failures;
     g_results.passed += (4 - option_failures);  /* 4 option tests */
+    g_results.total += 4;
+
+    /* Result type tests */
+    int result_failures = run_result_tests(seed);
+    g_results.failed += result_failures;
+    g_results.passed += (4 - result_failures);  /* 4 result tests */
     g_results.total += 4;
 
     printf("\n");

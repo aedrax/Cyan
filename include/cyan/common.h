@@ -41,6 +41,18 @@
 } while(0)
 #endif
 
+/**
+ * @brief Internal helper to panic and return a dummy value for expression context
+ * @param msg The panic message
+ * @param dummy A dummy value to satisfy type requirements (never returned)
+ * 
+ * This macro is used in expression contexts where a value must be returned
+ * (e.g., ternary operators). The dummy value is never actually returned
+ * because abort() is called first.
+ */
+#define CYAN_PANIC_EXPR(msg, dummy) \
+    (fprintf(stderr, "PANIC at %s:%d: %s\n", __FILE__, __LINE__, msg), abort(), (dummy))
+
 /*============================================================================
  * Utility Macros
  *============================================================================*/

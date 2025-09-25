@@ -95,14 +95,6 @@
  *============================================================================*/
 
 /**
- * @brief Internal helper to panic and return a dummy value for expression context
- * @param msg The panic message
- * @param dummy A dummy value to satisfy type requirements (never returned)
- */
-#define CYAN_PANIC_EXPR(msg, dummy) \
-    (fprintf(stderr, "PANIC at %s:%d: %s\n", __FILE__, __LINE__, msg), abort(), (dummy))
-
-/**
  * @brief Extract the value from an Option, panicking if empty
  * @param opt The Option to unwrap
  * @return The contained value
