@@ -18,6 +18,7 @@
 /* External test functions from component test files */
 extern int run_option_tests(theft_seed seed);
 extern int run_result_tests(theft_seed seed);
+extern int run_vector_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -165,6 +166,12 @@ static void run_all_tests(void) {
     int result_failures = run_result_tests(seed);
     g_results.failed += result_failures;
     g_results.passed += (4 - result_failures);  /* 4 result tests */
+    g_results.total += 4;
+
+    /* Vector type tests */
+    int vector_failures = run_vector_tests(seed);
+    g_results.failed += vector_failures;
+    g_results.passed += (4 - vector_failures);  /* 4 vector tests */
     g_results.total += 4;
 
     printf("\n");
