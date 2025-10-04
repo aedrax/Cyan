@@ -19,6 +19,7 @@
 extern int run_option_tests(theft_seed seed);
 extern int run_result_tests(theft_seed seed);
 extern int run_vector_tests(theft_seed seed);
+extern int run_slice_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -173,6 +174,12 @@ static void run_all_tests(void) {
     g_results.failed += vector_failures;
     g_results.passed += (4 - vector_failures);  /* 4 vector tests */
     g_results.total += 4;
+
+    /* Slice type tests */
+    int slice_failures = run_slice_tests(seed);
+    g_results.failed += slice_failures;
+    g_results.passed += (3 - slice_failures);  /* 3 slice tests */
+    g_results.total += 3;
 
     printf("\n");
 }
