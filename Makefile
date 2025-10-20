@@ -2,7 +2,8 @@
 # Header-only C11 library with property-based testing
 
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -I include -I vendor/theft/inc
+# Use gnu11 to support GCC extensions (nested functions for defer, cleanup attribute)
+CFLAGS = -std=gnu11 -Wall -Wextra -I include -I vendor/theft/inc
 LDFLAGS = -L vendor/theft/build -ltheft -lm
 
 # Sanitizer flags (enabled with SANITIZE=1)

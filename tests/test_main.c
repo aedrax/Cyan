@@ -21,6 +21,7 @@ extern int run_result_tests(theft_seed seed);
 extern int run_vector_tests(theft_seed seed);
 extern int run_slice_tests(theft_seed seed);
 extern int run_functional_tests(theft_seed seed);
+extern int run_defer_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -186,6 +187,12 @@ static void run_all_tests(void) {
     int functional_failures = run_functional_tests(seed);
     g_results.failed += functional_failures;
     g_results.passed += (4 - functional_failures);  /* 4 functional tests */
+    g_results.total += 4;
+
+    /* Defer mechanism tests */
+    int defer_failures = run_defer_tests(seed);
+    g_results.failed += defer_failures;
+    g_results.passed += (4 - defer_failures);  /* 4 defer tests */
     g_results.total += 4;
 
     printf("\n");
