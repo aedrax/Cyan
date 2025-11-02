@@ -23,6 +23,7 @@ extern int run_slice_tests(theft_seed seed);
 extern int run_functional_tests(theft_seed seed);
 extern int run_defer_tests(theft_seed seed);
 extern int run_coro_tests(theft_seed seed);
+extern int run_serialize_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -201,6 +202,12 @@ static void run_all_tests(void) {
     g_results.failed += coro_failures;
     g_results.passed += (4 - coro_failures);  /* 4 coro tests */
     g_results.total += 4;
+
+    /* Serialization tests */
+    int serialize_failures = run_serialize_tests(seed);
+    g_results.failed += serialize_failures;
+    g_results.passed += (7 - serialize_failures);  /* 7 serialize tests */
+    g_results.total += 7;
 
     printf("\n");
 }
