@@ -24,6 +24,7 @@ extern int run_functional_tests(theft_seed seed);
 extern int run_defer_tests(theft_seed seed);
 extern int run_coro_tests(theft_seed seed);
 extern int run_serialize_tests(theft_seed seed);
+extern int run_smartptr_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -208,6 +209,12 @@ static void run_all_tests(void) {
     g_results.failed += serialize_failures;
     g_results.passed += (7 - serialize_failures);  /* 7 serialize tests */
     g_results.total += 7;
+
+    /* Smart pointer tests */
+    int smartptr_failures = run_smartptr_tests(seed);
+    g_results.failed += smartptr_failures;
+    g_results.passed += (11 - smartptr_failures);  /* 11 smartptr tests */
+    g_results.total += 11;
 
     printf("\n");
 }
