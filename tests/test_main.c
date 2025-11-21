@@ -26,6 +26,7 @@ extern int run_coro_tests(theft_seed seed);
 extern int run_serialize_tests(theft_seed seed);
 extern int run_smartptr_tests(theft_seed seed);
 extern int run_hashmap_tests(theft_seed seed);
+extern int run_string_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -222,6 +223,12 @@ static void run_all_tests(void) {
     g_results.failed += hashmap_failures;
     g_results.passed += (4 - hashmap_failures);  /* 4 hashmap tests */
     g_results.total += 4;
+
+    /* String tests */
+    int string_failures = run_string_tests(seed);
+    g_results.failed += string_failures;
+    g_results.passed += (5 - string_failures);  /* 5 string tests */
+    g_results.total += 5;
 
     printf("\n");
 }
