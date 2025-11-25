@@ -27,6 +27,7 @@ extern int run_serialize_tests(theft_seed seed);
 extern int run_smartptr_tests(theft_seed seed);
 extern int run_hashmap_tests(theft_seed seed);
 extern int run_string_tests(theft_seed seed);
+extern int run_match_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -229,6 +230,12 @@ static void run_all_tests(void) {
     g_results.failed += string_failures;
     g_results.passed += (5 - string_failures);  /* 5 string tests */
     g_results.total += 5;
+
+    /* Pattern matching tests */
+    int match_failures = run_match_tests(seed);
+    g_results.failed += match_failures;
+    g_results.passed += (3 - match_failures);  /* 3 match tests */
+    g_results.total += 3;
 
     printf("\n");
 }
