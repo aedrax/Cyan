@@ -28,6 +28,7 @@ extern int run_smartptr_tests(theft_seed seed);
 extern int run_hashmap_tests(theft_seed seed);
 extern int run_string_tests(theft_seed seed);
 extern int run_match_tests(theft_seed seed);
+extern int run_channel_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -236,6 +237,12 @@ static void run_all_tests(void) {
     g_results.failed += match_failures;
     g_results.passed += (3 - match_failures);  /* 3 match tests */
     g_results.total += 3;
+
+    /* Channel tests */
+    int channel_failures = run_channel_tests(seed);
+    g_results.failed += channel_failures;
+    g_results.passed += (6 - channel_failures);  /* 6 channel tests */
+    g_results.total += 6;
 
     printf("\n");
 }
