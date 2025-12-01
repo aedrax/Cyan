@@ -1,0 +1,19 @@
+# Build directories
+build/
+examples/build/
+
+# Object files
+*.o
+
+# Executables (no extension)
+test_runner
+
+# Editor files
+*.swp
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
