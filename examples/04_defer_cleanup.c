@@ -9,15 +9,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cyan/common.h>
 #include <cyan/defer.h>
 
 // Simulated resource that needs cleanup
 typedef struct {
-    int id;
+    i32 id;
     char *name;
 } Resource;
 
-Resource *resource_create(int id, const char *name) {
+Resource *resource_create(i32 id, const char *name) {
     Resource *r = malloc(sizeof(Resource));
     if (!r) return NULL;
     r->id = id;
@@ -39,7 +40,7 @@ void resource_destroy(Resource *r) {
     }
 }
 
-int main(void) {
+i32 main(void) {
     printf("=== Defer Examples ===\n\n");
     
     // Example 1: Basic defer
@@ -79,15 +80,15 @@ int main(void) {
     // Example 4: defer_free for simple allocations
     printf("\n4. defer_free for Memory:\n");
     {
-        int *data = malloc(sizeof(int) * 10);
+        i32 *data = malloc(sizeof(i32) * 10);
         defer_free(data);
         
-        for (int i = 0; i < 10; i++) {
+        for (i32 i = 0; i < 10; i++) {
             data[i] = i * i;
         }
         
         printf("   Squares: ");
-        for (int i = 0; i < 10; i++) {
+        for (i32 i = 0; i < 10; i++) {
             printf("%d ", data[i]);
         }
         printf("\n");

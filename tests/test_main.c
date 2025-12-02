@@ -29,6 +29,7 @@ extern int run_hashmap_tests(theft_seed seed);
 extern int run_string_tests(theft_seed seed);
 extern int run_match_tests(theft_seed seed);
 extern int run_channel_tests(theft_seed seed);
+extern int run_types_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -242,6 +243,12 @@ static void run_all_tests(void) {
     int channel_failures = run_channel_tests(seed);
     g_results.failed += channel_failures;
     g_results.passed += (6 - channel_failures);  /* 6 channel tests */
+    g_results.total += 6;
+
+    /* Primitive type alias tests */
+    int types_failures = run_types_tests(seed);
+    g_results.failed += types_failures;
+    g_results.passed += (6 - types_failures);  /* 6 types tests */
     g_results.total += 6;
 
     printf("\n");

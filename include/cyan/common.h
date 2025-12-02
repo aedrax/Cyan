@@ -12,6 +12,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stddef.h>
 
 /*============================================================================
  * Panic Handler
@@ -157,5 +159,169 @@ typedef _Bool bool;
 #define CYAN_VERSION_MINOR 1
 #define CYAN_VERSION_PATCH 0
 #define CYAN_VERSION_STRING "0.1.0"
+
+/*============================================================================
+ * Primitive Type Aliases
+ *============================================================================
+ * Concise type names with predictable sizes for cleaner code.
+ * Platform-specific types are conditionally available based on compiler
+ * and architecture support.
+ */
+
+/*----------------------------------------------------------------------------
+ * Signed Integer Aliases
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief 8-bit signed integer
+ */
+typedef int8_t i8;
+
+/**
+ * @brief 16-bit signed integer
+ */
+typedef int16_t i16;
+
+/**
+ * @brief 32-bit signed integer
+ */
+typedef int32_t i32;
+
+/**
+ * @brief 64-bit signed integer
+ */
+typedef int64_t i64;
+
+/**
+ * @brief 128-bit signed integer (platform-dependent)
+ * Only available when CYAN_HAS_INT128 is 1
+ */
+#if defined(__SIZEOF_INT128__) || defined(__int128)
+typedef __int128 i128;
+#define CYAN_HAS_INT128 1
+#else
+#define CYAN_HAS_INT128 0
+#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#warning "128-bit integer types not available on this platform"
+#endif
+#endif
+
+/*----------------------------------------------------------------------------
+ * Unsigned Integer Aliases
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief 8-bit unsigned integer
+ */
+typedef uint8_t u8;
+
+/**
+ * @brief 16-bit unsigned integer
+ */
+typedef uint16_t u16;
+
+/**
+ * @brief 32-bit unsigned integer
+ */
+typedef uint32_t u32;
+
+/**
+ * @brief 64-bit unsigned integer
+ */
+typedef uint64_t u64;
+
+/**
+ * @brief 128-bit unsigned integer (platform-dependent)
+ * Only available when CYAN_HAS_INT128 is 1
+ */
+#if CYAN_HAS_INT128
+typedef unsigned __int128 u128;
+#endif
+
+/*----------------------------------------------------------------------------
+ * Pointer-Sized Integer Aliases
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Signed pointer-sized integer
+ * Guaranteed to be able to hold any pointer value when cast
+ */
+typedef intptr_t isize;
+
+/**
+ * @brief Unsigned pointer-sized integer
+ * Compatible with size_t for array indexing
+ */
+typedef uintptr_t usize;
+
+/*----------------------------------------------------------------------------
+ * Floating-Point Type Aliases
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief 16-bit floating-point (platform-dependent)
+ * Only available when CYAN_HAS_FLOAT16 is 1
+ */
+#if defined(__FLT16_MAX__) || defined(__STDC_IEC_60559_TYPES__)
+typedef _Float16 f16;
+#define CYAN_HAS_FLOAT16 1
+#else
+#define CYAN_HAS_FLOAT16 0
+#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#warning "16-bit float type (_Float16) not available on this platform"
+#endif
+#endif
+
+/**
+ * @brief 32-bit floating-point (IEEE-754 binary32)
+ */
+typedef float f32;
+
+/**
+ * @brief 64-bit floating-point (IEEE-754 binary64)
+ */
+typedef double f64;
+
+/**
+ * @brief 80-bit extended precision floating-point (x86 only)
+ * Only available when CYAN_HAS_FLOAT80 is 1
+ */
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64)
+typedef long double f80;
+#define CYAN_HAS_FLOAT80 1
+#else
+#define CYAN_HAS_FLOAT80 0
+#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#warning "80-bit float type not available on this platform"
+#endif
+#endif
+
+/**
+ * @brief 128-bit floating-point (IEEE-754 binary128, platform-dependent)
+ * Only available when CYAN_HAS_FLOAT128 is 1
+ */
+#if defined(__FLT128_MAX__) || defined(__SIZEOF_FLOAT128__)
+typedef _Float128 f128;
+#define CYAN_HAS_FLOAT128 1
+#else
+#define CYAN_HAS_FLOAT128 0
+#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#warning "128-bit float type (_Float128) not available on this platform"
+#endif
+#endif
+
+/*----------------------------------------------------------------------------
+ * Special Types
+ *----------------------------------------------------------------------------*/
+
+/**
+ * @brief Type-erased pointer type
+ * Use as anyopaque* for generic/opaque data pointers
+ * 
+ * Example:
+ *   anyopaque* ptr = some_data;
+ *   int* typed_ptr = (int*)ptr;
+ */
+typedef void anyopaque;
 
 #endif /* CYAN_COMMON_H */

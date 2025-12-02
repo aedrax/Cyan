@@ -12,6 +12,7 @@ BUILD_DIR = build
 
 # List of example programs
 EXAMPLES = \
+	00_primitive_types \
 	01_option_basics \
 	02_result_error_handling \
 	03_vector_collections \
