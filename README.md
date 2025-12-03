@@ -82,6 +82,59 @@ anyopaque* generic_ptr = &some_data;
 
 ---
 
+## Panic Handler
+
+The panic handler is invoked for unrecoverable errors in the Cyan library. When a panic occurs, the default behavior is to print diagnostic information (file, line number, and error message) to stderr and then abort the program.
+
+**Default Behavior:**
+
+```c
+// Default panic output format:
+// PANIC at filename.c:42: error message
+```
+
+The default `CYAN_PANIC` macro prints the file name, line number, and a descriptive message before calling `abort()`. This provides clear debugging information when something goes wrong.
+
+### Panic Trigger Scenarios
+
+Panics are triggered in the following situations:
+
+| Scenario | Description |
+|----------|-------------|
+| `unwrap()` on None | Attempting to extract a value from an empty Option |
+| `unwrap_ok()` on Err | Attempting to extract a success value from an error Result |
+| `unwrap_err()` on Ok | Attempting to extract an error value from a success Result |
+| Memory allocation failure | When `malloc()` or `realloc()` returns NULL in collection operations |
+| Resuming finished coroutine | Attempting to resume a coroutine that has already completed |
+
+### Custom Panic Handler
+
+You can override the default panic behavior by defining `CYAN_PANIC` before including any Cyan headers:
+
+```c
+// Define custom panic handler BEFORE including Cyan headers
+#define CYAN_PANIC(msg) do { \
+    fprintf(stderr, "[FATAL] %s:%d - %s\n", __FILE__, __LINE__, msg); \
+    /* Add custom logging, cleanup, or crash reporting here */ \
+    abort(); \
+} while(0)
+
+#include <cyan/cyan.h>
+
+// Now all panics will use your custom handler
+```
+
+**Important:** The custom handler must be defined before any Cyan header is included, as the panic macro is checked with `#ifndef` and only defined if not already present.
+
+### Panic API
+
+| Macro | Description |
+|-------|-------------|
+| `CYAN_PANIC(msg)` | Trigger a panic with the given message. Prints file, line, and message to stderr, then calls `abort()`. Can be overridden by user. |
+| `CYAN_PANIC_EXPR(msg, dummy)` | Internal helper for panics in expression contexts. Used where a value must be returned (e.g., ternary operators). The dummy value satisfies type requirements but is never returned. |
+
+---
+
 ## Option Type
 
 Explicit nullable value handling that makes absence explicit in code.
@@ -1300,6 +1353,7 @@ See the `examples/` directory for complete example programs:
 | `06_pattern_matching.c` | Pattern matching on Option/Result |
 | `07_functional.c` | Functional primitives (map, filter, reduce) |
 | `08_vtable_api.c` | Vtable method-style API and convenience macros |
+| `09_panic_handler.c` | Panic handler behavior and customization |
 
 Build and run examples:
 ```bash
