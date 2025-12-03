@@ -9,6 +9,8 @@
  * - Property 57: Closed channel drains buffer first
  * - Property 58: Send to closed channel returns error
  * - Property 59: try_send to closed channel returns error
+ * - Property 1 (vtable): Shared vtable instances (Channel)
+ * - Property 11 (vtable): Channel vtable behavioral equivalence
  */
 
 #include <stdio.h>
@@ -241,6 +243,168 @@ static enum theft_trial_res prop_try_send_closed_error(struct theft *t, void *ar
 }
 
 /*============================================================================
+ * Property 1 (vtable): Shared vtable instances (Channel)
+ * For any two Channel_T instances, their vtable pointers shall be equal
+ * (point to the same address).
+ *============================================================================*/
+
+static enum theft_trial_res prop_channel_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    /* Use absolute value and constrain to reasonable capacity 1-10 */
+    int64_t abs_val = (*val_ptr < 0) ? -(*val_ptr) : *val_ptr;
+    size_t capacity = (size_t)((abs_val % 10) + 1);
+    
+    /* Create two channels with potentially different capacities */
+    Channel_int *ch1 = chan_int_new(capacity);
+    Channel_int *ch2 = chan_int_new(capacity + 5);
+    
+    if (!ch1 || !ch2) {
+        if (ch1) chan_int_free(ch1);
+        if (ch2) chan_int_free(ch2);
+        return THEFT_TRIAL_ERROR;
+    }
+    
+    /* Verify both channels share the same vtable */
+    if (ch1->vt != ch2->vt) {
+        chan_int_free(ch1);
+        chan_int_free(ch2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Verify vtable is not NULL */
+    if (ch1->vt == NULL) {
+        chan_int_free(ch1);
+        chan_int_free(ch2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    chan_int_free(ch1);
+    chan_int_free(ch2);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 11 (vtable): Channel vtable behavioral equivalence
+ * For any Channel_T instance, calling operations through the vtable
+ * (ch->vt->send, ch->vt->recv, ch->vt->close) shall produce identical
+ * results to calling the standalone functions (chan_T_send, chan_T_recv,
+ * chan_T_close).
+ *============================================================================*/
+
+static enum theft_trial_res prop_channel_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create two channels - one for vtable ops, one for standalone ops */
+    Channel_int *ch_vtable = chan_int_new(10);
+    Channel_int *ch_standalone = chan_int_new(10);
+    
+    if (!ch_vtable || !ch_standalone) {
+        if (ch_vtable) chan_int_free(ch_vtable);
+        if (ch_standalone) chan_int_free(ch_standalone);
+        return THEFT_TRIAL_ERROR;
+    }
+    
+    /* Test send via vtable vs standalone */
+    ChanStatus status_vtable = ch_vtable->vt->chan_send(ch_vtable, val);
+    ChanStatus status_standalone = chan_int_send(ch_standalone, val);
+    
+    if (status_vtable != status_standalone) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Send more values */
+    ch_vtable->vt->chan_send(ch_vtable, val + 1);
+    chan_int_send(ch_standalone, val + 1);
+    
+    ch_vtable->vt->chan_send(ch_vtable, val + 2);
+    chan_int_send(ch_standalone, val + 2);
+    
+    /* Test recv via vtable vs standalone */
+    Option_int recv_vtable = ch_vtable->vt->chan_recv(ch_vtable);
+    Option_int recv_standalone = chan_int_recv(ch_standalone);
+    
+    if (is_some(recv_vtable) != is_some(recv_standalone)) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (is_some(recv_vtable) && unwrap(recv_vtable) != unwrap(recv_standalone)) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test try_send via vtable vs standalone */
+    ChanStatus try_send_vtable = ch_vtable->vt->chan_try_send(ch_vtable, val + 10);
+    ChanStatus try_send_standalone = chan_int_try_send(ch_standalone, val + 10);
+    
+    if (try_send_vtable != try_send_standalone) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test try_recv via vtable vs standalone */
+    Option_int try_recv_vtable = ch_vtable->vt->chan_try_recv(ch_vtable);
+    Option_int try_recv_standalone = chan_int_try_recv(ch_standalone);
+    
+    if (is_some(try_recv_vtable) != is_some(try_recv_standalone)) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (is_some(try_recv_vtable) && unwrap(try_recv_vtable) != unwrap(try_recv_standalone)) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test is_closed via vtable vs standalone */
+    bool is_closed_vtable = ch_vtable->vt->chan_is_closed(ch_vtable);
+    bool is_closed_standalone = chan_int_is_closed(ch_standalone);
+    
+    if (is_closed_vtable != is_closed_standalone) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test close via vtable vs standalone */
+    ch_vtable->vt->chan_close(ch_vtable);
+    chan_int_close(ch_standalone);
+    
+    /* Verify both are now closed */
+    if (ch_vtable->vt->chan_is_closed(ch_vtable) != chan_int_is_closed(ch_standalone)) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test send to closed channel via vtable vs standalone */
+    ChanStatus closed_send_vtable = ch_vtable->vt->chan_send(ch_vtable, val);
+    ChanStatus closed_send_standalone = chan_int_send(ch_standalone, val);
+    
+    if (closed_send_vtable != closed_send_standalone) {
+        chan_int_free(ch_vtable);
+        chan_int_free(ch_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Cleanup using vtable free for one, standalone for other */
+    ch_vtable->vt->chan_free(ch_vtable);
+    chan_int_free(ch_standalone);
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -282,6 +446,16 @@ static ChannelTest channel_tests[] = {
     {
         "Property 59: try_send to closed channel returns error",
         prop_try_send_closed_error,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (Channel)",
+        prop_channel_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 11 (vtable): Channel vtable behavioral equivalence",
+        prop_channel_vtable_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

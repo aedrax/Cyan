@@ -117,6 +117,7 @@ typedef enum {
  * Creates:
  * - _MapEntry_K_V: Internal entry structure
  * - HashMap_K_V: The hash map structure
+ * - HashMapVT_K_V: Vtable structure with function pointers
  * - hashmap_K_V_new(): Create empty map
  * - hashmap_K_V_with_capacity(cap): Create map with initial capacity
  * - hashmap_K_V_insert(m, key, value): Insert or update entry
@@ -125,6 +126,9 @@ typedef enum {
  * - hashmap_K_V_remove(m, key): Remove entry
  * - hashmap_K_V_len(m): Get number of entries
  * - hashmap_K_V_free(m): Free map memory
+ * 
+ * Also generates a vtable struct HashMapVT_K_V and convenience macros:
+ * - MAP_INSERT(m, k, v), MAP_GET(m, k), MAP_CONTAINS(m, k), MAP_REMOVE(m, k), MAP_LEN(m), MAP_FREE(m)
  * 
  * Requires: OPTION_DEFINE(V) must be called before HASHMAP_DEFINE(K, V)
  */
@@ -136,14 +140,35 @@ typedef enum {
         V value; \
     } _MapEntry_##K##_##V; \
     \
-    /* HashMap structure */ \
+    /* Forward declare HashMap_K_V for use in vtable */ \
+    typedef struct HashMap_##K##_##V HashMap_##K##_##V; \
+    \
+    /** \
+     * @brief Vtable structure for HashMap_K_V containing function pointers \
+     */ \
     typedef struct { \
+        void (*insert)(HashMap_##K##_##V *m, K key, V value); \
+        Option_##V (*get)(HashMap_##K##_##V *m, K key); \
+        bool (*contains)(HashMap_##K##_##V *m, K key); \
+        Option_##V (*remove)(HashMap_##K##_##V *m, K key); \
+        size_t (*len)(HashMap_##K##_##V *m); \
+        void (*free)(HashMap_##K##_##V *m); \
+    } HashMapVT_##K##_##V; \
+    \
+    /** \
+     * @brief HashMap structure with vtable pointer \
+     */ \
+    struct HashMap_##K##_##V { \
         _MapEntry_##K##_##V *buckets; \
         size_t capacity; \
         size_t len; \
         HashFn hash_fn; \
         EqualFn equal_fn; \
-    } HashMap_##K##_##V; \
+        const HashMapVT_##K##_##V *vt; \
+    }; \
+    \
+    /* Forward declare vtable instance */ \
+    static const HashMapVT_##K##_##V _hashmap_##K##_##V##_vt; \
     \
     /* Forward declaration for resize */ \
     static inline void _hashmap_##K##_##V##_resize(HashMap_##K##_##V *m, size_t new_cap); \
@@ -158,7 +183,8 @@ typedef enum {
             .capacity = 0, \
             .len = 0, \
             .hash_fn = _cyan_fnv1a_hash, \
-            .equal_fn = _cyan_default_equal \
+            .equal_fn = _cyan_default_equal, \
+            .vt = &_hashmap_##K##_##V##_vt \
         }; \
         return m; \
     } \
@@ -178,7 +204,8 @@ typedef enum {
             .capacity = actual_cap, \
             .len = 0, \
             .hash_fn = _cyan_fnv1a_hash, \
-            .equal_fn = _cyan_default_equal \
+            .equal_fn = _cyan_default_equal, \
+            .vt = &_hashmap_##K##_##V##_vt \
         }; \
         if (!m.buckets) CYAN_PANIC("allocation failed"); \
         return m; \
@@ -360,6 +387,18 @@ typedef enum {
         m->capacity = 0; \
         m->len = 0; \
     } \
+    \
+    /** \
+     * @brief Static const vtable instance shared by all HashMap_K_V instances \
+     */ \
+    static const HashMapVT_##K##_##V _hashmap_##K##_##V##_vt = { \
+        .insert = hashmap_##K##_##V##_insert, \
+        .get = hashmap_##K##_##V##_get, \
+        .contains = hashmap_##K##_##V##_contains, \
+        .remove = hashmap_##K##_##V##_remove, \
+        .len = hashmap_##K##_##V##_len, \
+        .free = hashmap_##K##_##V##_free \
+    }; \
     /* Dummy typedef to absorb trailing semicolon */ \
     typedef HashMap_##K##_##V HashMap_##K##_##V##_defined
 
@@ -429,5 +468,54 @@ typedef enum {
     } \
     /* Dummy typedef to absorb trailing semicolon */ \
     typedef HashMapIter_##K##_##V HashMapIter_##K##_##V##_defined
+
+/*============================================================================
+ * HashMap Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Insert a key-value pair into the map via vtable
+ * @param m The map (not a pointer)
+ * @param k The key
+ * @param val The value
+ */
+#define MAP_INSERT(m, k, val) ((m).vt->insert(&(m), (k), (val)))
+
+/**
+ * @brief Get value by key via vtable
+ * @param m The map (not a pointer)
+ * @param k The key
+ * @return Option containing the value, or None if not found
+ */
+#define MAP_GET(m, k) ((m).vt->get(&(m), (k)))
+
+/**
+ * @brief Check if key exists in map via vtable
+ * @param m The map (not a pointer)
+ * @param k The key
+ * @return true if key exists, false otherwise
+ */
+#define MAP_CONTAINS(m, k) ((m).vt->contains(&(m), (k)))
+
+/**
+ * @brief Remove a key from the map via vtable
+ * @param m The map (not a pointer)
+ * @param k The key
+ * @return Option containing the removed value, or None if not found
+ */
+#define MAP_REMOVE(m, k) ((m).vt->remove(&(m), (k)))
+
+/**
+ * @brief Get the number of entries via vtable
+ * @param m The map (not a pointer)
+ * @return Number of entries
+ */
+#define MAP_LEN(m) ((m).vt->len(&(m)))
+
+/**
+ * @brief Free all memory associated with the map via vtable
+ * @param m The map (not a pointer)
+ */
+#define MAP_FREE(m) ((m).vt->free(&(m)))
 
 #endif /* CYAN_HASHMAP_H */

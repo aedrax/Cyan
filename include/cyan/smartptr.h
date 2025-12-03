@@ -63,6 +63,10 @@ typedef struct {
  * Unique Pointer Definition Macro
  *============================================================================*/
 
+/* Forward declare vtable struct */
+#define UNIQUE_PTR_VT_FORWARD(T) \
+    typedef struct UniquePtrVT_##T UniquePtrVT_##T
+
 /**
  * @brief Generate a UniquePtr type for a given base type
  * @param T The base type to wrap
@@ -75,17 +79,42 @@ typedef struct {
  *   UniquePtr_int p = unique_int_new(42);
  */
 #define UNIQUE_PTR_DEFINE(T) \
+    UNIQUE_PTR_VT_FORWARD(T); \
+    \
     typedef struct { \
         T *ptr; \
         Destructor dtor; \
+        const UniquePtrVT_##T *vt; \
     } UniquePtr_##T; \
+    \
+    /* Forward declarations for vtable */ \
+    static inline T *unique_##T##_get(UniquePtr_##T *u); \
+    static inline T unique_##T##_deref(UniquePtr_##T *u); \
+    static inline UniquePtr_##T unique_##T##_move(UniquePtr_##T *u); \
+    static inline void unique_##T##_free(UniquePtr_##T *u); \
+    \
+    /* Vtable structure */ \
+    struct UniquePtrVT_##T { \
+        T *(*uptr_get)(UniquePtr_##T *u); \
+        T (*uptr_deref)(UniquePtr_##T *u); \
+        UniquePtr_##T (*uptr_move)(UniquePtr_##T *u); \
+        void (*uptr_free)(UniquePtr_##T *u); \
+    }; \
+    \
+    /* Static const vtable instance */ \
+    static const UniquePtrVT_##T _unique_##T##_vt = { \
+        .uptr_get = unique_##T##_get, \
+        .uptr_deref = unique_##T##_deref, \
+        .uptr_move = unique_##T##_move, \
+        .uptr_free = unique_##T##_free \
+    }; \
     \
     /** @brief Create a new unique pointer with a value */ \
     static inline UniquePtr_##T unique_##T##_new(T value) { \
         T *p = (T *)malloc(sizeof(T)); \
         if (!p) CYAN_PANIC("allocation failed"); \
         *p = value; \
-        return (UniquePtr_##T){ .ptr = p, .dtor = NULL }; \
+        return (UniquePtr_##T){ .ptr = p, .dtor = NULL, .vt = &_unique_##T##_vt }; \
     } \
     \
     /** @brief Create a new unique pointer with a value and custom destructor */ \
@@ -93,7 +122,7 @@ typedef struct {
         T *p = (T *)malloc(sizeof(T)); \
         if (!p) CYAN_PANIC("allocation failed"); \
         *p = value; \
-        return (UniquePtr_##T){ .ptr = p, .dtor = dtor }; \
+        return (UniquePtr_##T){ .ptr = p, .dtor = dtor, .vt = &_unique_##T##_vt }; \
     } \
     \
     /** @brief Get raw pointer (does not transfer ownership) */ \
@@ -154,6 +183,10 @@ typedef struct {
  * Shared Pointer Definition Macro
  *============================================================================*/
 
+/* Forward declare vtable struct */
+#define SHARED_PTR_VT_FORWARD(T) \
+    typedef struct SharedPtrVT_##T SharedPtrVT_##T
+
 /**
  * @brief Generate SharedPtr and WeakPtr types for a given base type
  * @param T The base type to wrap
@@ -169,12 +202,14 @@ typedef struct {
  *   SharedPtr_int s2 = shared_int_clone(&s);  // ref count = 2
  */
 #define SHARED_PTR_DEFINE(T) \
+    SHARED_PTR_VT_FORWARD(T); \
     typedef struct SharedPtr_##T SharedPtr_##T; \
     typedef struct WeakPtr_##T WeakPtr_##T; \
     \
     struct SharedPtr_##T { \
         T *ptr; \
         _SharedCtrlBlock *ctrl; \
+        const SharedPtrVT_##T *vt; \
     }; \
     \
     struct WeakPtr_##T { \
@@ -188,6 +223,31 @@ typedef struct {
         SharedPtr_##T value; \
     } Option_SharedPtr_##T; \
     \
+    /* Forward declarations for vtable */ \
+    static inline T *shared_##T##_get(SharedPtr_##T *s); \
+    static inline T shared_##T##_deref(SharedPtr_##T *s); \
+    static inline SharedPtr_##T shared_##T##_clone(SharedPtr_##T *s); \
+    static inline size_t shared_##T##_count(SharedPtr_##T *s); \
+    static inline void shared_##T##_release(SharedPtr_##T *s); \
+    \
+    /* Vtable structure */ \
+    struct SharedPtrVT_##T { \
+        T *(*sptr_get)(SharedPtr_##T *s); \
+        T (*sptr_deref)(SharedPtr_##T *s); \
+        SharedPtr_##T (*sptr_clone)(SharedPtr_##T *s); \
+        size_t (*sptr_count)(SharedPtr_##T *s); \
+        void (*sptr_release)(SharedPtr_##T *s); \
+    }; \
+    \
+    /* Static const vtable instance */ \
+    static const SharedPtrVT_##T _shared_##T##_vt = { \
+        .sptr_get = shared_##T##_get, \
+        .sptr_deref = shared_##T##_deref, \
+        .sptr_clone = shared_##T##_clone, \
+        .sptr_count = shared_##T##_count, \
+        .sptr_release = shared_##T##_release \
+    }; \
+    \
     /** @brief Create a new shared pointer with a value */ \
     static inline SharedPtr_##T shared_##T##_new(T value) { \
         T *p = (T *)malloc(sizeof(T)); \
@@ -199,7 +259,7 @@ typedef struct {
         } \
         *p = value; \
         *ctrl = (_SharedCtrlBlock){ .strong_count = 1, .weak_count = 1, .dtor = NULL }; \
-        return (SharedPtr_##T){ .ptr = p, .ctrl = ctrl }; \
+        return (SharedPtr_##T){ .ptr = p, .ctrl = ctrl, .vt = &_shared_##T##_vt }; \
     } \
     \
     /** @brief Create a new shared pointer with a value and custom destructor */ \
@@ -213,13 +273,13 @@ typedef struct {
         } \
         *p = value; \
         *ctrl = (_SharedCtrlBlock){ .strong_count = 1, .weak_count = 1, .dtor = dtor }; \
-        return (SharedPtr_##T){ .ptr = p, .ctrl = ctrl }; \
+        return (SharedPtr_##T){ .ptr = p, .ctrl = ctrl, .vt = &_shared_##T##_vt }; \
     } \
     \
     /** @brief Clone a shared pointer (increment reference count) */ \
     static inline SharedPtr_##T shared_##T##_clone(SharedPtr_##T *s) { \
         if (s->ctrl) s->ctrl->strong_count++; \
-        return (SharedPtr_##T){ .ptr = s->ptr, .ctrl = s->ctrl }; \
+        return (SharedPtr_##T){ .ptr = s->ptr, .ctrl = s->ctrl, .vt = &_shared_##T##_vt }; \
     } \
     \
     /** @brief Get raw pointer (does not affect reference count) */ \
@@ -274,7 +334,7 @@ typedef struct {
         w->ctrl->strong_count++; \
         return (Option_SharedPtr_##T){ \
             .has_value = true, \
-            .value = (SharedPtr_##T){ .ptr = w->ptr, .ctrl = w->ctrl } \
+            .value = (SharedPtr_##T){ .ptr = w->ptr, .ctrl = w->ctrl, .vt = &_shared_##T##_vt } \
         }; \
     } \
     \
@@ -326,5 +386,54 @@ typedef struct {
 #define weak_ptr(T, name, shared) \
     __attribute__((cleanup(weak_##T##_release))) \
     WeakPtr_##T name = weak_##T##_from_shared(&(shared))
+
+/*============================================================================
+ * Vtable Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Get raw pointer from UniquePtr (via vtable)
+ */
+#define UPTR_GET(u) ((u).vt->uptr_get(&(u)))
+
+/**
+ * @brief Dereference UniquePtr (via vtable)
+ */
+#define UPTR_DEREF(u) ((u).vt->uptr_deref(&(u)))
+
+/**
+ * @brief Move ownership from UniquePtr (via vtable)
+ */
+#define UPTR_MOVE(u) ((u).vt->uptr_move(&(u)))
+
+/**
+ * @brief Free UniquePtr (via vtable)
+ */
+#define UPTR_FREE(u) ((u).vt->uptr_free(&(u)))
+
+/**
+ * @brief Get raw pointer from SharedPtr (via vtable)
+ */
+#define SPTR_GET(s) ((s).vt->sptr_get(&(s)))
+
+/**
+ * @brief Dereference SharedPtr (via vtable)
+ */
+#define SPTR_DEREF(s) ((s).vt->sptr_deref(&(s)))
+
+/**
+ * @brief Clone SharedPtr (via vtable)
+ */
+#define SPTR_CLONE(s) ((s).vt->sptr_clone(&(s)))
+
+/**
+ * @brief Get reference count from SharedPtr (via vtable)
+ */
+#define SPTR_COUNT(s) ((s).vt->sptr_count(&(s)))
+
+/**
+ * @brief Release SharedPtr (via vtable)
+ */
+#define SPTR_RELEASE(s) ((s).vt->sptr_release(&(s)))
 
 #endif /* CYAN_SMARTPTR_H */

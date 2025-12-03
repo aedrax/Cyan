@@ -82,6 +82,28 @@ i32 main(void) {
     Option_f64 mapped_empty = map_option(empty, f64, i32_to_f64);
     printf("   Mapping None: %s\n", is_none(mapped_empty) ? "None" : "Some");
     
+    // Example 6: Vtable Method-Style API
+    printf("\n6. Vtable Method-Style API:\n");
+    Option_i32 opt_vt = Some(i32, 99);
+    Option_i32 none_vt = None(i32);
+    
+    // Direct vtable access
+    printf("   Direct vtable access:\n");
+    printf("      opt_vt.vt->opt_is_some(&opt_vt) = %s\n", opt_vt.vt->opt_is_some(&opt_vt) ? "yes" : "no");
+    printf("      opt_vt.vt->opt_unwrap(&opt_vt) = %d\n", opt_vt.vt->opt_unwrap(&opt_vt));
+    printf("      none_vt.vt->opt_unwrap_or(&none_vt, -1) = %d\n", none_vt.vt->opt_unwrap_or(&none_vt, -1));
+    
+    // Convenience macros (cleaner syntax)
+    printf("   Convenience macros:\n");
+    printf("      OPT_IS_SOME(opt_vt) = %s\n", OPT_IS_SOME(opt_vt) ? "yes" : "no");
+    printf("      OPT_IS_NONE(none_vt) = %s\n", OPT_IS_NONE(none_vt) ? "yes" : "no");
+    printf("      OPT_UNWRAP(opt_vt) = %d\n", OPT_UNWRAP(opt_vt));
+    printf("      OPT_UNWRAP_OR(none_vt, -1) = %d\n", OPT_UNWRAP_OR(none_vt, -1));
+    
+    // All Option_i32 instances share the same vtable
+    printf("   Shared vtable (memory efficient):\n");
+    printf("      some_val.vt == opt_vt.vt: %s\n", some_val.vt == opt_vt.vt ? "yes" : "no");
+    
     printf("\n=== Done ===\n");
     return 0;
 }

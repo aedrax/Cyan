@@ -122,6 +122,59 @@ i32 main(void) {
         weak_i32_release(&weak);
     }
     
+    // Example 7: Vtable Method-Style API for UniquePtr
+    printf("\n7. UniquePtr Vtable API:\n");
+    {
+        UniquePtr_i32 u = unique_i32_new(555);
+        
+        // Direct vtable access
+        printf("   Direct vtable access:\n");
+        printf("      u.vt->uptr_deref(&u) = %d\n", u.vt->uptr_deref(&u));
+        printf("      u.vt->uptr_get(&u) = %p\n", (void *)u.vt->uptr_get(&u));
+        
+        // Convenience macros
+        printf("   Convenience macros:\n");
+        printf("      UPTR_DEREF(u) = %d\n", UPTR_DEREF(u));
+        printf("      UPTR_GET(u) = %p\n", (void *)UPTR_GET(u));
+        
+        // Move using vtable macro
+        UniquePtr_i32 u2 = UPTR_MOVE(u);
+        printf("   After UPTR_MOVE:\n");
+        printf("      Original ptr: %p (should be NULL)\n", (void *)UPTR_GET(u));
+        printf("      New ptr value: %d\n", UPTR_DEREF(u2));
+        
+        UPTR_FREE(u2);
+    }
+    
+    // Example 8: Vtable Method-Style API for SharedPtr
+    printf("\n8. SharedPtr Vtable API:\n");
+    {
+        SharedPtr_i32 s = shared_i32_new(777);
+        
+        // Direct vtable access
+        printf("   Direct vtable access:\n");
+        printf("      s.vt->sptr_deref(&s) = %d\n", s.vt->sptr_deref(&s));
+        printf("      s.vt->sptr_count(&s) = %zu\n", s.vt->sptr_count(&s));
+        
+        // Convenience macros
+        printf("   Convenience macros:\n");
+        printf("      SPTR_DEREF(s) = %d\n", SPTR_DEREF(s));
+        printf("      SPTR_COUNT(s) = %zu\n", SPTR_COUNT(s));
+        
+        // Clone using vtable macro
+        SharedPtr_i32 s2 = SPTR_CLONE(s);
+        printf("   After SPTR_CLONE:\n");
+        printf("      SPTR_COUNT(s) = %zu\n", SPTR_COUNT(s));
+        printf("      SPTR_COUNT(s2) = %zu\n", SPTR_COUNT(s2));
+        
+        // Shared vtable verification
+        printf("   Shared vtable (memory efficient):\n");
+        printf("      s.vt == s2.vt: %s\n", s.vt == s2.vt ? "yes" : "no");
+        
+        SPTR_RELEASE(s2);
+        SPTR_RELEASE(s);
+    }
+    
     printf("\n=== Done ===\n");
     return 0;
 }

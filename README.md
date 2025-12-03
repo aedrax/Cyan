@@ -853,6 +853,268 @@ i32 main(void) {
 
 ---
 
+## Vtable Method-Style API
+
+All Cyan collection types support a method-style API through vtables (virtual method tables). This provides an object-oriented feel while maintaining C's efficiency.
+
+### How It Works
+
+Each type instance contains a pointer to a shared static vtable. All instances of the same type share the same vtable, so the memory overhead is just one pointer per instance.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Static Memory                         │
+│  ┌─────────────────┐                                    │
+│  │ _vec_i32_vt     │ ◄── Single vtable per type         │
+│  │ (static const)  │                                    │
+│  └────────┬────────┘                                    │
+│           │                                              │
+└───────────┼─────────────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────────────────────────┐
+│                    Heap/Stack Memory                       │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐              │
+│  │ Vec_i32  │   │ Vec_i32  │   │ Vec_i32  │              │
+│  │ v1.vt ───┼───┼──────────┼───┼──────────┼──► shared    │
+│  └──────────┘   └──────────┘   └──────────┘              │
+└───────────────────────────────────────────────────────────┘
+```
+
+### Three Ways to Call Operations
+
+```c
+#include <cyan/vector.h>
+
+OPTION_DEFINE(i32);
+VECTOR_DEFINE(i32);
+
+i32 main(void) {
+    Vec_i32 v = vec_i32_new();
+    
+    // 1. Standalone function (traditional)
+    vec_i32_push(&v, 42);
+    
+    // 2. Vtable method call (OOP-style)
+    v.vt->push(&v, 42);
+    
+    // 3. Convenience macro (concise)
+    VEC_PUSH(v, 42);
+    
+    // All three are equivalent!
+    
+    vec_i32_free(&v);
+    return 0;
+}
+```
+
+### Vector Vtable
+
+```c
+// Vtable method calls
+v.vt->push(&v, elem);      // Append element
+v.vt->pop(&v);             // Remove and return last element
+v.vt->get(&v, idx);        // Get element at index
+v.vt->len(&v);             // Get length
+v.vt->free(&v);            // Free memory
+
+// Convenience macros
+VEC_PUSH(v, elem)          // v.vt->push(&v, elem)
+VEC_POP(v)                 // v.vt->pop(&v)
+VEC_GET(v, idx)            // v.vt->get(&v, idx)
+VEC_LEN(v)                 // v.vt->len(&v)
+VEC_FREE(v)                // v.vt->free(&v)
+```
+
+### HashMap Vtable
+
+```c
+// Vtable method calls
+m.vt->insert(&m, key, val);  // Insert key-value pair
+m.vt->get(&m, key);          // Get value by key
+m.vt->contains(&m, key);     // Check if key exists
+m.vt->remove(&m, key);       // Remove and return value
+m.vt->len(&m);               // Get number of entries
+m.vt->free(&m);              // Free memory
+
+// Convenience macros
+MAP_INSERT(m, k, v)        // m.vt->insert(&m, k, v)
+MAP_GET(m, k)              // m.vt->get(&m, k)
+MAP_CONTAINS(m, k)         // m.vt->contains(&m, k)
+MAP_REMOVE(m, k)           // m.vt->remove(&m, k)
+MAP_LEN(m)                 // m.vt->len(&m)
+MAP_FREE(m)                // m.vt->free(&m)
+```
+
+### Slice Vtable
+
+```c
+// Vtable method calls
+s.vt->get(s, idx);           // Get element at index
+s.vt->subslice(s, start, end); // Create subslice
+s.vt->len(s);                // Get length
+
+// Convenience macros
+SLICE_GET(s, idx)          // s.vt->get(s, idx)
+SLICE_SUBSLICE(s, st, end) // s.vt->subslice(s, st, end)
+SLICE_LEN(s)               // s.vt->len(s)
+```
+
+### String Vtable
+
+```c
+// Vtable method calls
+s.vt->push(&s, c);           // Append character
+s.vt->append(&s, cstr);      // Append C string
+s.vt->clear(&s);             // Clear content
+s.vt->get(&s, idx);          // Get character at index
+s.vt->len(&s);               // Get length
+s.vt->cstr(&s);              // Get C string
+s.vt->slice(&s, start, end); // Create slice
+s.vt->free(&s);              // Free memory
+
+// Convenience macros
+STR_PUSH(s, c)             // s.vt->push(&s, c)
+STR_APPEND(s, cstr)        // s.vt->append(&s, cstr)
+STR_CLEAR(s)               // s.vt->clear(&s)
+STR_GET(s, idx)            // s.vt->get(&s, idx)
+STR_LEN(s)                 // s.vt->len(&s)
+STR_CSTR(s)                // s.vt->cstr(&s)
+STR_SLICE(s, st, end)      // s.vt->slice(&s, st, end)
+STR_FREE(s)                // s.vt->free(&s)
+```
+
+### Option Vtable
+
+```c
+// Vtable method calls
+opt.vt->is_some(&opt);       // Check if has value
+opt.vt->is_none(&opt);       // Check if empty
+opt.vt->unwrap(&opt);        // Extract value (panics if None)
+opt.vt->unwrap_or(&opt, def); // Extract value or default
+
+// Convenience macros
+OPT_IS_SOME(opt)           // opt.vt->is_some(&opt)
+OPT_IS_NONE(opt)           // opt.vt->is_none(&opt)
+OPT_UNWRAP(opt)            // opt.vt->unwrap(&opt)
+OPT_UNWRAP_OR(opt, def)    // opt.vt->unwrap_or(&opt, def)
+```
+
+### Result Vtable
+
+```c
+// Vtable method calls
+res.vt->is_ok(&res);         // Check if success
+res.vt->is_err(&res);        // Check if error
+res.vt->unwrap_ok(&res);     // Extract success value
+res.vt->unwrap_err(&res);    // Extract error value
+res.vt->unwrap_ok_or(&res, def); // Extract success or default
+
+// Convenience macros
+RES_IS_OK(res)             // res.vt->is_ok(&res)
+RES_IS_ERR(res)            // res.vt->is_err(&res)
+RES_UNWRAP_OK(res)         // res.vt->unwrap_ok(&res)
+RES_UNWRAP_ERR(res)        // res.vt->unwrap_err(&res)
+RES_UNWRAP_OK_OR(res, def) // res.vt->unwrap_ok_or(&res, def)
+```
+
+### UniquePtr Vtable
+
+```c
+// Vtable method calls
+u.vt->get(&u);               // Get raw pointer
+u.vt->deref(&u);             // Dereference
+u.vt->move(&u);              // Transfer ownership
+u.vt->free(&u);              // Free memory
+
+// Convenience macros
+UPTR_GET(u)                // u.vt->get(&u)
+UPTR_DEREF(u)              // u.vt->deref(&u)
+UPTR_MOVE(u)               // u.vt->move(&u)
+UPTR_FREE(u)               // u.vt->free(&u)
+```
+
+### SharedPtr Vtable
+
+```c
+// Vtable method calls
+s.vt->get(&s);               // Get raw pointer
+s.vt->deref(&s);             // Dereference
+s.vt->clone(&s);             // Clone (increment ref count)
+s.vt->count(&s);             // Get reference count
+s.vt->release(&s);           // Release (decrement ref count)
+
+// Convenience macros
+SPTR_GET(s)                // s.vt->get(&s)
+SPTR_DEREF(s)              // s.vt->deref(&s)
+SPTR_CLONE(s)              // s.vt->clone(&s)
+SPTR_COUNT(s)              // s.vt->count(&s)
+SPTR_RELEASE(s)            // s.vt->release(&s)
+```
+
+### Channel Vtable
+
+```c
+// Vtable method calls (channel is pointer-based)
+ch->vt->send(ch, val);       // Send value
+ch->vt->recv(ch);            // Receive value
+ch->vt->try_send(ch, val);   // Non-blocking send
+ch->vt->try_recv(ch);        // Non-blocking receive
+ch->vt->close(ch);           // Close channel
+ch->vt->is_closed(ch);       // Check if closed
+ch->vt->free(ch);            // Free channel
+
+// Convenience macros
+CHAN_SEND(ch, val)         // ch->vt->send(ch, val)
+CHAN_RECV(ch)              // ch->vt->recv(ch)
+CHAN_TRY_SEND(ch, val)     // ch->vt->try_send(ch, val)
+CHAN_TRY_RECV(ch)          // ch->vt->try_recv(ch)
+CHAN_CLOSE(ch)             // ch->vt->close(ch)
+CHAN_IS_CLOSED(ch)         // ch->vt->is_closed(ch)
+CHAN_FREE(ch)              // ch->vt->free(ch)
+```
+
+### Complete Example
+
+```c
+#include <cyan/cyan.h>
+
+OPTION_DEFINE(i32);
+VECTOR_DEFINE(i32);
+HASHMAP_DEFINE(i32, i32);
+
+i32 main(void) {
+    // Vector with convenience macros
+    Vec_i32 nums = vec_i32_new();
+    VEC_PUSH(nums, 10);
+    VEC_PUSH(nums, 20);
+    VEC_PUSH(nums, 30);
+    
+    printf("Vector length: %zu\n", VEC_LEN(nums));
+    
+    Option_i32 elem = VEC_GET(nums, 1);
+    if (OPT_IS_SOME(elem)) {
+        printf("Element at 1: %d\n", OPT_UNWRAP(elem));
+    }
+    
+    // HashMap with convenience macros
+    HashMap_i32_i32 scores = hashmap_i32_i32_new();
+    MAP_INSERT(scores, 1, 100);
+    MAP_INSERT(scores, 2, 200);
+    
+    if (MAP_CONTAINS(scores, 1)) {
+        Option_i32 score = MAP_GET(scores, 1);
+        printf("Score for 1: %d\n", OPT_UNWRAP_OR(score, 0));
+    }
+    
+    VEC_FREE(nums);
+    MAP_FREE(scores);
+    return 0;
+}
+```
+
+---
+
 ## Serialization
 
 Text-based serialization using S-expression-like format.
@@ -1037,6 +1299,7 @@ See the `examples/` directory for complete example programs:
 | `05_smart_pointers.c` | Unique and shared pointers |
 | `06_pattern_matching.c` | Pattern matching on Option/Result |
 | `07_functional.c` | Functional primitives (map, filter, reduce) |
+| `08_vtable_api.c` | Vtable method-style API and convenience macros |
 
 Build and run examples:
 ```bash

@@ -33,6 +33,12 @@ static enum theft_trial_res prop_insert_get_roundtrip(struct theft *t, void *arg
     
     HashMap_int_int m = hashmap_int_int_new();
     
+    /* Verify vt pointer is set after creation */
+    if (m.vt == NULL) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     /* Insert multiple key-value pairs */
     int keys[20];
     int values[20];
@@ -84,6 +90,13 @@ static enum theft_trial_res prop_get_missing_key(struct theft *t, void *arg1) {
     
     /* Test on empty map */
     HashMap_int_int empty_m = hashmap_int_int_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (empty_m.vt == NULL) {
+        hashmap_int_int_free(&empty_m);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     Option_int empty_opt = hashmap_int_int_get(&empty_m, seed);
     if (!is_none(empty_opt)) {
         hashmap_int_int_free(&empty_m);
@@ -130,6 +143,12 @@ static enum theft_trial_res prop_iteration(struct theft *t, void *arg1) {
     int seed = (int)(*val_ptr);
     
     HashMap_int_int m = hashmap_int_int_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (m.vt == NULL) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
     
     /* Insert entries and track them - use fixed size arrays to avoid allocation issues */
     int num_entries = 5 + (((unsigned int)seed) % 15);  /* 5-19 entries */
@@ -209,6 +228,12 @@ static enum theft_trial_res prop_remove(struct theft *t, void *arg1) {
     
     HashMap_int_int m = hashmap_int_int_new();
     
+    /* Verify vt pointer is set after creation */
+    if (m.vt == NULL) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     /* Insert entries */
     int num_entries = 10;
     int keys[10];
@@ -267,6 +292,174 @@ static enum theft_trial_res prop_remove(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
+ * Property 1 (vtable): Shared vtable instances (HashMap)
+ * For any two instances of HashMap_K_V, their vtable pointers shall be equal
+ * (point to the same address).
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create multiple hashmap instances using different constructors */
+    HashMap_int_int m1 = hashmap_int_int_new();
+    HashMap_int_int m2 = hashmap_int_int_new();
+    HashMap_int_int m3 = hashmap_int_int_with_capacity(10);
+    HashMap_int_int m4 = hashmap_int_int_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
+    
+    /* All vtable pointers should be non-null */
+    if (m1.vt == NULL || m2.vt == NULL || m3.vt == NULL || m4.vt == NULL) {
+        hashmap_int_int_free(&m1);
+        hashmap_int_int_free(&m2);
+        hashmap_int_int_free(&m3);
+        hashmap_int_int_free(&m4);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* All vtable pointers should point to the same address */
+    if (m1.vt != m2.vt || m2.vt != m3.vt || m3.vt != m4.vt) {
+        hashmap_int_int_free(&m1);
+        hashmap_int_int_free(&m2);
+        hashmap_int_int_free(&m3);
+        hashmap_int_int_free(&m4);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    hashmap_int_int_free(&m1);
+    hashmap_int_int_free(&m2);
+    hashmap_int_int_free(&m3);
+    hashmap_int_int_free(&m4);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 3 (vtable): HashMap vtable behavioral equivalence
+ * For any HashMap_K_V instance, any valid key-value pair, calling operations
+ * through the vtable (m.vt->insert, m.vt->get, m.vt->remove) shall produce
+ * identical results to calling the standalone functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr);
+    
+    /* Create two identical hashmaps - one for vtable ops, one for standalone ops */
+    HashMap_int_int m_vtable = hashmap_int_int_new();
+    HashMap_int_int m_standalone = hashmap_int_int_new();
+    
+    /* Test insert equivalence: vtable vs standalone */
+    int keys[5];
+    int values[5];
+    for (int i = 0; i < 5; i++) {
+        keys[i] = seed + i * 7;
+        values[i] = seed * 3 + i;
+        
+        m_vtable.vt->insert(&m_vtable, keys[i], values[i]);
+        hashmap_int_int_insert(&m_standalone, keys[i], values[i]);
+    }
+    
+    /* Test len equivalence */
+    size_t len_vtable = m_vtable.vt->len(&m_vtable);
+    size_t len_standalone = hashmap_int_int_len(&m_standalone);
+    
+    if (len_vtable != len_standalone) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test get equivalence for all inserted keys */
+    for (int i = 0; i < 5; i++) {
+        Option_int opt_vtable = m_vtable.vt->get(&m_vtable, keys[i]);
+        Option_int opt_standalone = hashmap_int_int_get(&m_standalone, keys[i]);
+        
+        if (is_some(opt_vtable) != is_some(opt_standalone)) {
+            hashmap_int_int_free(&m_vtable);
+            hashmap_int_int_free(&m_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+        
+        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
+            hashmap_int_int_free(&m_vtable);
+            hashmap_int_int_free(&m_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test get for missing key equivalence */
+    int missing_key = seed + 1000;
+    Option_int missing_vtable = m_vtable.vt->get(&m_vtable, missing_key);
+    Option_int missing_standalone = hashmap_int_int_get(&m_standalone, missing_key);
+    
+    if (is_none(missing_vtable) != is_none(missing_standalone)) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test contains equivalence */
+    bool contains_vtable = m_vtable.vt->contains(&m_vtable, keys[0]);
+    bool contains_standalone = hashmap_int_int_contains(&m_standalone, keys[0]);
+    
+    if (contains_vtable != contains_standalone) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test contains for missing key */
+    bool missing_contains_vtable = m_vtable.vt->contains(&m_vtable, missing_key);
+    bool missing_contains_standalone = hashmap_int_int_contains(&m_standalone, missing_key);
+    
+    if (missing_contains_vtable != missing_contains_standalone) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test remove equivalence */
+    Option_int remove_vtable = m_vtable.vt->remove(&m_vtable, keys[0]);
+    Option_int remove_standalone = hashmap_int_int_remove(&m_standalone, keys[0]);
+    
+    if (is_some(remove_vtable) != is_some(remove_standalone)) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (is_some(remove_vtable) && unwrap(remove_vtable) != unwrap(remove_standalone)) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Verify lengths are still equal after remove */
+    if (m_vtable.vt->len(&m_vtable) != hashmap_int_int_len(&m_standalone)) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test remove for missing key equivalence */
+    Option_int remove_missing_vtable = m_vtable.vt->remove(&m_vtable, missing_key);
+    Option_int remove_missing_standalone = hashmap_int_int_remove(&m_standalone, missing_key);
+    
+    if (is_none(remove_missing_vtable) != is_none(remove_missing_standalone)) {
+        hashmap_int_int_free(&m_vtable);
+        hashmap_int_int_free(&m_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Cleanup using vtable free for one, standalone for other */
+    m_vtable.vt->free(&m_vtable);
+    hashmap_int_int_free(&m_standalone);
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -298,6 +491,16 @@ static HashMapTest hashmap_tests[] = {
     {
         "Property 45: HashMap remove then get returns None",
         prop_remove,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (HashMap)",
+        prop_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 3 (vtable): HashMap vtable behavioral equivalence",
+        prop_vtable_behavioral_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

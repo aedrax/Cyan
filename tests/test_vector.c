@@ -31,6 +31,13 @@ static enum theft_trial_res prop_push_and_get(struct theft *t, void *arg1) {
     int val = (int)(*val_ptr);
     
     Vec_int v = vec_int_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (v.vt == NULL) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     size_t initial_len = vec_int_len(&v);
     
     /* Push the element */
@@ -73,6 +80,13 @@ static enum theft_trial_res prop_pop(struct theft *t, void *arg1) {
     
     /* Test pop on empty vector returns None */
     Vec_int empty_v = vec_int_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (empty_v.vt == NULL) {
+        vec_int_free(&empty_v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     Option_int empty_pop = vec_int_pop(&empty_v);
     if (!is_none(empty_pop)) {
         vec_int_free(&empty_v);
@@ -125,6 +139,12 @@ static enum theft_trial_res prop_out_of_bounds(struct theft *t, void *arg1) {
     
     Vec_int v = vec_int_new();
     
+    /* Verify vt pointer is set after creation */
+    if (v.vt == NULL) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     /* Push some elements */
     vec_int_push(&v, val);
     vec_int_push(&v, val + 1);
@@ -172,6 +192,13 @@ static enum theft_trial_res prop_length_tracking(struct theft *t, void *arg1) {
     unsigned int seed = (unsigned int)((*val_ptr) & 0xFFFFFFFF);
     
     Vec_int v = vec_int_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (v.vt == NULL) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     size_t expected_len = 0;
     
     /* Perform a sequence of push and pop operations */
@@ -198,6 +225,159 @@ static enum theft_trial_res prop_length_tracking(struct theft *t, void *arg1) {
     }
     
     vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 1: Shared vtable instances (Vector)
+ * For any two instances of Vec_T, their vtable pointers shall be equal
+ * (point to the same address).
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create multiple vector instances using different constructors */
+    Vec_int v1 = vec_int_new();
+    Vec_int v2 = vec_int_new();
+    Vec_int v3 = vec_int_with_capacity(10);
+    Vec_int v4 = vec_int_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
+    
+    /* All vtable pointers should be non-null */
+    if (v1.vt == NULL || v2.vt == NULL || v3.vt == NULL || v4.vt == NULL) {
+        vec_int_free(&v1);
+        vec_int_free(&v2);
+        vec_int_free(&v3);
+        vec_int_free(&v4);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* All vtable pointers should point to the same address */
+    if (v1.vt != v2.vt || v2.vt != v3.vt || v3.vt != v4.vt) {
+        vec_int_free(&v1);
+        vec_int_free(&v2);
+        vec_int_free(&v3);
+        vec_int_free(&v4);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    vec_int_free(&v1);
+    vec_int_free(&v2);
+    vec_int_free(&v3);
+    vec_int_free(&v4);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 2: Vector vtable behavioral equivalence
+ * For any Vec_T instance, any valid element, and any valid index, calling
+ * operations through the vtable (v.vt->push, v.vt->pop, v.vt->get) shall
+ * produce identical results to calling the standalone functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create two identical vectors - one for vtable ops, one for standalone ops */
+    Vec_int v_vtable = vec_int_new();
+    Vec_int v_standalone = vec_int_new();
+    
+    /* Test push equivalence: vtable vs standalone */
+    v_vtable.vt->push(&v_vtable, val);
+    vec_int_push(&v_standalone, val);
+    
+    v_vtable.vt->push(&v_vtable, val + 1);
+    vec_int_push(&v_standalone, val + 1);
+    
+    v_vtable.vt->push(&v_vtable, val + 2);
+    vec_int_push(&v_standalone, val + 2);
+    
+    /* Test len equivalence */
+    size_t len_vtable = v_vtable.vt->len(&v_vtable);
+    size_t len_standalone = vec_int_len(&v_standalone);
+    
+    if (len_vtable != len_standalone) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test get equivalence for all indices */
+    for (size_t i = 0; i < len_vtable; i++) {
+        Option_int opt_vtable = v_vtable.vt->get(&v_vtable, i);
+        Option_int opt_standalone = vec_int_get(&v_standalone, i);
+        
+        if (is_some(opt_vtable) != is_some(opt_standalone)) {
+            vec_int_free(&v_vtable);
+            vec_int_free(&v_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+        
+        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
+            vec_int_free(&v_vtable);
+            vec_int_free(&v_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test get out-of-bounds equivalence */
+    Option_int oob_vtable = v_vtable.vt->get(&v_vtable, len_vtable + 10);
+    Option_int oob_standalone = vec_int_get(&v_standalone, len_standalone + 10);
+    
+    if (is_none(oob_vtable) != is_none(oob_standalone)) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test pop equivalence */
+    Option_int pop_vtable = v_vtable.vt->pop(&v_vtable);
+    Option_int pop_standalone = vec_int_pop(&v_standalone);
+    
+    if (is_some(pop_vtable) != is_some(pop_standalone)) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (is_some(pop_vtable) && unwrap(pop_vtable) != unwrap(pop_standalone)) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Verify lengths are still equal after pop */
+    if (v_vtable.vt->len(&v_vtable) != vec_int_len(&v_standalone)) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test pop on empty vector equivalence */
+    Vec_int empty_vtable = vec_int_new();
+    Vec_int empty_standalone = vec_int_new();
+    
+    Option_int empty_pop_vtable = empty_vtable.vt->pop(&empty_vtable);
+    Option_int empty_pop_standalone = vec_int_pop(&empty_standalone);
+    
+    if (is_none(empty_pop_vtable) != is_none(empty_pop_standalone)) {
+        vec_int_free(&v_vtable);
+        vec_int_free(&v_standalone);
+        vec_int_free(&empty_vtable);
+        vec_int_free(&empty_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Cleanup */
+    v_vtable.vt->free(&v_vtable);
+    vec_int_free(&v_standalone);
+    vec_int_free(&empty_vtable);
+    vec_int_free(&empty_standalone);
+    
     return THEFT_TRIAL_PASS;
 }
 
@@ -233,6 +413,16 @@ static VectorTest vector_tests[] = {
     {
         "Property 12: vector length equals pushes minus pops",
         prop_length_tracking,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (Vector)",
+        prop_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 2 (vtable): Vector vtable behavioral equivalence",
+        prop_vtable_behavioral_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

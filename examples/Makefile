@@ -19,7 +19,8 @@ EXAMPLES = \
 	04_defer_cleanup \
 	05_smart_pointers \
 	06_pattern_matching \
-	07_functional
+	07_functional \
+	08_vtable_api
 
 # Add build directory prefix to examples
 EXAMPLE_BINS = $(addprefix $(BUILD_DIR)/,$(EXAMPLES))

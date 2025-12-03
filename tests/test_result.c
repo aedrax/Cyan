@@ -125,6 +125,112 @@ static enum theft_trial_res prop_unwrap_ok_or(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
+ * Property 1 (vtable): Shared vtable instances (Result)
+ * For any two Result_T_E instances, their vtable pointers shall be equal
+ *============================================================================*/
+
+static enum theft_trial_res prop_result_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create multiple Result instances */
+    Result_int_int res1 = Ok(int, int, val);
+    Result_int_int res2 = Ok(int, int, val + 1);
+    Result_int_int res3 = Err(int, int, val);
+    
+    /* All vtable pointers should be equal (shared) */
+    if (res1.vt != res2.vt) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (res1.vt != res3.vt) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Vtable should not be NULL */
+    if (res1.vt == NULL) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 8 (vtable): Result vtable behavioral equivalence
+ * For any Result_T_E instance, vtable operations produce identical results to macros
+ *============================================================================*/
+
+static enum theft_trial_res prop_result_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    int default_val = val + 1;
+    
+    /* Test with Ok */
+    Result_int_int ok_res = Ok(int, int, val);
+    
+    /* is_ok equivalence */
+    if (is_ok(ok_res) != RES_IS_OK(ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (is_ok(ok_res) != ok_res.vt->res_is_ok(&ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* is_err equivalence */
+    if (is_err(ok_res) != RES_IS_ERR(ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (is_err(ok_res) != ok_res.vt->res_is_err(&ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_ok equivalence */
+    if (unwrap_ok(ok_res) != RES_UNWRAP_OK(ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unwrap_ok(ok_res) != ok_res.vt->res_unwrap_ok(&ok_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_ok_or equivalence */
+    if (unwrap_ok_or(ok_res, default_val) != RES_UNWRAP_OK_OR(ok_res, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unwrap_ok_or(ok_res, default_val) != ok_res.vt->res_unwrap_ok_or(&ok_res, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test with Err */
+    Result_int_int err_res = Err(int, int, val);
+    
+    /* is_ok equivalence */
+    if (is_ok(err_res) != RES_IS_OK(err_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* is_err equivalence */
+    if (is_err(err_res) != RES_IS_ERR(err_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_err equivalence */
+    if (unwrap_err(err_res) != RES_UNWRAP_ERR(err_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unwrap_err(err_res) != err_res.vt->res_unwrap_err(&err_res)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_ok_or equivalence for Err */
+    if (unwrap_ok_or(err_res, default_val) != RES_UNWRAP_OK_OR(err_res, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -156,6 +262,16 @@ static ResultTest result_tests[] = {
     {
         "Property 8: unwrap_ok_or returns value or default",
         prop_unwrap_ok_or,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (Result)",
+        prop_result_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 8 (vtable): Result vtable behavioral equivalence",
+        prop_result_vtable_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

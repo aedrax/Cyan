@@ -8,7 +8,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <limits.h>
 #include <cyan/common.h>
 #include <cyan/result.h>
@@ -107,6 +106,28 @@ i32 main(void) {
             printf("Error: %s\n", unwrap_err(res));
         }
     }
+    
+    // Example 6: Vtable Method-Style API
+    printf("\n6. Vtable Method-Style API:\n");
+    Result_i32_const_charp ok_vt = Ok(i32, const_charp, 200);
+    Result_i32_const_charp err_vt = Err(i32, const_charp, "vtable error");
+    
+    // Direct vtable access
+    printf("   Direct vtable access:\n");
+    printf("      ok_vt.vt->res_is_ok(&ok_vt) = %s\n", ok_vt.vt->res_is_ok(&ok_vt) ? "yes" : "no");
+    printf("      ok_vt.vt->res_unwrap_ok(&ok_vt) = %d\n", ok_vt.vt->res_unwrap_ok(&ok_vt));
+    printf("      err_vt.vt->res_unwrap_err(&err_vt) = \"%s\"\n", err_vt.vt->res_unwrap_err(&err_vt));
+    
+    // Convenience macros (cleaner syntax)
+    printf("   Convenience macros:\n");
+    printf("      RES_IS_OK(ok_vt) = %s\n", RES_IS_OK(ok_vt) ? "yes" : "no");
+    printf("      RES_IS_ERR(err_vt) = %s\n", RES_IS_ERR(err_vt) ? "yes" : "no");
+    printf("      RES_UNWRAP_OK(ok_vt) = %d\n", RES_UNWRAP_OK(ok_vt));
+    printf("      RES_UNWRAP_OK_OR(err_vt, -1) = %d\n", RES_UNWRAP_OK_OR(err_vt, -1));
+    
+    // All Result_i32_const_charp instances share the same vtable
+    printf("   Shared vtable (memory efficient):\n");
+    printf("      success.vt == ok_vt.vt: %s\n", success.vt == ok_vt.vt ? "yes" : "no");
     
     printf("\n=== Done ===\n");
     return 0;

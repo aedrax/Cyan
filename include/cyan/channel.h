@@ -47,6 +47,10 @@ typedef enum {
  * Channel Type Definition Macro
  *============================================================================*/
 
+/* Forward declare vtable struct */
+#define CHANNEL_VT_FORWARD(T) \
+    typedef struct ChannelVT_##T ChannelVT_##T
+
 /**
  * @brief Generate a Channel type for a given element type
  * @param T The element type to be sent through the channel
@@ -65,6 +69,7 @@ typedef enum {
 #define CHANNEL_DEFINE(T) \
     /* Make sure Option type is defined for this type */ \
     OPTION_DEFINE(T); \
+    CHANNEL_VT_FORWARD(T); \
     \
     typedef struct { \
         T *buffer;           /* Circular buffer for elements */ \
@@ -77,6 +82,7 @@ typedef enum {
         void *mutex;         /* Mutex for thread safety */ \
         void *cond_send;     /* Condition variable for senders */ \
         void *cond_recv;     /* Condition variable for receivers */ \
+        const ChannelVT_##T *vt; /* Pointer to shared vtable */ \
     } Channel_##T; \
     \
     /* Internal: Lock the channel mutex if thread-safe */ \
@@ -115,6 +121,37 @@ typedef enum {
         _CYAN_CHANNEL_SIGNAL_RECV(ch); \
     } \
     \
+    /* Forward declarations for vtable */ \
+    static inline ChanStatus chan_##T##_send(Channel_##T *ch, T value); \
+    static inline Option_##T chan_##T##_recv(Channel_##T *ch); \
+    static inline ChanStatus chan_##T##_try_send(Channel_##T *ch, T value); \
+    static inline Option_##T chan_##T##_try_recv(Channel_##T *ch); \
+    static inline void chan_##T##_close(Channel_##T *ch); \
+    static inline bool chan_##T##_is_closed(Channel_##T *ch); \
+    static inline void chan_##T##_free(Channel_##T *ch); \
+    \
+    /* Vtable structure */ \
+    struct ChannelVT_##T { \
+        ChanStatus (*chan_send)(Channel_##T *ch, T value); \
+        Option_##T (*chan_recv)(Channel_##T *ch); \
+        ChanStatus (*chan_try_send)(Channel_##T *ch, T value); \
+        Option_##T (*chan_try_recv)(Channel_##T *ch); \
+        void (*chan_close)(Channel_##T *ch); \
+        bool (*chan_is_closed)(Channel_##T *ch); \
+        void (*chan_free)(Channel_##T *ch); \
+    }; \
+    \
+    /* Static const vtable instance */ \
+    static const ChannelVT_##T _chan_##T##_vt = { \
+        .chan_send = chan_##T##_send, \
+        .chan_recv = chan_##T##_recv, \
+        .chan_try_send = chan_##T##_try_send, \
+        .chan_try_recv = chan_##T##_try_recv, \
+        .chan_close = chan_##T##_close, \
+        .chan_is_closed = chan_##T##_is_closed, \
+        .chan_free = chan_##T##_free \
+    }; \
+    \
     /** \
      * @brief Create a new channel \
      * @param capacity Buffer size (0 for unbuffered/synchronous) \
@@ -135,6 +172,7 @@ typedef enum {
         ch->mutex = NULL; \
         ch->cond_send = NULL; \
         ch->cond_recv = NULL; \
+        ch->vt = &_chan_##T##_vt; \
         \
         if (capacity > 0) { \
             ch->buffer = (T *)malloc(capacity * sizeof(T)); \
@@ -396,5 +434,44 @@ typedef enum {
 #define _CYAN_CHANNEL_SIGNAL_RECV(ch) ((void)0)
 
 #endif /* CYAN_CHANNEL_THREADSAFE */
+
+/*============================================================================
+ * Vtable Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Send a value to channel (via vtable)
+ */
+#define CHAN_SEND(ch, val) ((ch)->vt->chan_send((ch), (val)))
+
+/**
+ * @brief Receive a value from channel (via vtable)
+ */
+#define CHAN_RECV(ch) ((ch)->vt->chan_recv((ch)))
+
+/**
+ * @brief Try to send a value without blocking (via vtable)
+ */
+#define CHAN_TRY_SEND(ch, val) ((ch)->vt->chan_try_send((ch), (val)))
+
+/**
+ * @brief Try to receive a value without blocking (via vtable)
+ */
+#define CHAN_TRY_RECV(ch) ((ch)->vt->chan_try_recv((ch)))
+
+/**
+ * @brief Close the channel (via vtable)
+ */
+#define CHAN_CLOSE(ch) ((ch)->vt->chan_close((ch)))
+
+/**
+ * @brief Check if channel is closed (via vtable)
+ */
+#define CHAN_IS_CLOSED(ch) ((ch)->vt->chan_is_closed((ch)))
+
+/**
+ * @brief Free the channel (via vtable)
+ */
+#define CHAN_FREE(ch) ((ch)->vt->chan_free((ch)))
 
 #endif /* CYAN_CHANNEL_H */

@@ -123,6 +123,102 @@ static enum theft_trial_res prop_unwrap_or(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
+ * Property 1 (vtable): Shared vtable instances (Option)
+ *============================================================================*/
+
+static enum theft_trial_res prop_option_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create two Option instances */
+    Option_int opt1 = Some(int, val);
+    Option_int opt2 = Some(int, val + 1);
+    Option_int opt3 = None(int);
+    
+    /* All vtable pointers should be equal (shared) */
+    if (opt1.vt != opt2.vt) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (opt1.vt != opt3.vt) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Vtable should not be NULL */
+    if (opt1.vt == NULL) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 7 (vtable): Option vtable behavioral equivalence
+ *============================================================================*/
+
+static enum theft_trial_res prop_option_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    int default_val = val + 1;
+    
+    /* Test with Some */
+    Option_int some_opt = Some(int, val);
+    
+    /* is_some equivalence */
+    if (is_some(some_opt) != OPT_IS_SOME(some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (is_some(some_opt) != some_opt.vt->opt_is_some(&some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* is_none equivalence */
+    if (is_none(some_opt) != OPT_IS_NONE(some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (is_none(some_opt) != some_opt.vt->opt_is_none(&some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap equivalence */
+    if (unwrap(some_opt) != OPT_UNWRAP(some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unwrap(some_opt) != some_opt.vt->opt_unwrap(&some_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_or equivalence */
+    if (unwrap_or(some_opt, default_val) != OPT_UNWRAP_OR(some_opt, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unwrap_or(some_opt, default_val) != some_opt.vt->opt_unwrap_or(&some_opt, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test with None */
+    Option_int none_opt = None(int);
+    
+    /* is_some equivalence */
+    if (is_some(none_opt) != OPT_IS_SOME(none_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* is_none equivalence */
+    if (is_none(none_opt) != OPT_IS_NONE(none_opt)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* unwrap_or equivalence for None */
+    if (unwrap_or(none_opt, default_val) != OPT_UNWRAP_OR(none_opt, default_val)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -154,6 +250,16 @@ static OptionTest option_tests[] = {
     {
         "Property 4: unwrap_or returns value or default",
         prop_unwrap_or,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (Option)",
+        prop_option_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 7 (vtable): Option vtable behavioral equivalence",
+        prop_option_vtable_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

@@ -95,6 +95,42 @@ i32 main(void) {
     }
     printf("\n");
     
+    // Example 6: Vtable Method-Style API
+    printf("\n6. Vtable Method-Style API:\n");
+    Vec_i32 vt_demo = vec_i32_new();
+    
+    // Direct vtable access
+    printf("   Direct vtable access:\n");
+    vt_demo.vt->push(&vt_demo, 100);
+    vt_demo.vt->push(&vt_demo, 200);
+    vt_demo.vt->push(&vt_demo, 300);
+    printf("      vt_demo.vt->push(&vt_demo, 100/200/300)\n");
+    printf("      vt_demo.vt->len(&vt_demo) = %zu\n", vt_demo.vt->len(&vt_demo));
+    Option_i32 vt_elem = vt_demo.vt->get(&vt_demo, 1);
+    printf("      vt_demo.vt->get(&vt_demo, 1) = %d\n", is_some(vt_elem) ? unwrap(vt_elem) : -1);
+    
+    // Convenience macros (cleaner syntax)
+    printf("   Convenience macros:\n");
+    VEC_PUSH(vt_demo, 400);
+    printf("      VEC_PUSH(vt_demo, 400)\n");
+    printf("      VEC_LEN(vt_demo) = %zu\n", VEC_LEN(vt_demo));
+    Option_i32 macro_elem = VEC_GET(vt_demo, 2);
+    printf("      VEC_GET(vt_demo, 2) = %d\n", is_some(macro_elem) ? unwrap(macro_elem) : -1);
+    
+    // Pop using convenience macro
+    printf("   Popping with VEC_POP: ");
+    Option_i32 pop_val;
+    while (is_some(pop_val = VEC_POP(vt_demo))) {
+        printf("%d ", unwrap(pop_val));
+    }
+    printf("\n");
+    
+    // All Vec_i32 instances share the same vtable
+    printf("   Shared vtable (memory efficient):\n");
+    printf("      numbers.vt == vt_demo.vt: %s\n", numbers.vt == vt_demo.vt ? "yes" : "no");
+    
+    VEC_FREE(vt_demo);
+    
     // Cleanup
     vec_i32_free(&numbers);
     vec_f64_free(&values);

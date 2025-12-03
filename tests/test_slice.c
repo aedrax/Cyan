@@ -39,6 +39,11 @@ static enum theft_trial_res prop_slice_get_bounds(struct theft *t, void *arg1) {
     
     Slice_int s = slice_int_from_array(arr, 5);
     
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
     /* Test valid indices return Some with correct value */
     for (size_t i = 0; i < 5; i++) {
         Option_int opt = slice_int_get(s, i);
@@ -89,6 +94,11 @@ static enum theft_trial_res prop_subslice_correctness(struct theft *t, void *arg
     }
     
     Slice_int s = slice_int_from_array(arr, 10);
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        return THEFT_TRIAL_FAIL;
+    }
     
     /* Test subslice [2, 7) */
     size_t start = 2;
@@ -159,9 +169,14 @@ static enum theft_trial_res prop_slice_length(struct theft *t, void *arg1) {
     }
     
     Slice_int s = slice_int_from_array(arr, len);
-    if (slice_int_len(s) != len) {
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
         return THEFT_TRIAL_FAIL;
     }
+    
+    if (slice_int_len(s) != len) {
+     
     
     /* Test slice from vector */
     Vec_int v = vec_int_new();
@@ -186,6 +201,56 @@ static enum theft_trial_res prop_slice_length(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
+ * Property 1: Shared vtable instances (Slice)
+ * For any two instances of Slice_T, their vtable pointers shall be equal
+ * (point to the same address).
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_slice_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int base_val = (int)(*val_ptr);
+    
+    /* Create arrays with known values */
+    int arr1[5];
+    int arr2[10];
+    for (int i = 0; i < 5; i++) {
+        arr1[i] = base_val + i;
+    }
+    for (int i = 0; i < 10; i++) {
+        arr2[i] = base_val + i * 2;
+    }
+    
+    /* Create slices using different constructors */
+    Slice_int s1 = slice_int_from_array(arr1, 5);
+    Slice_int s2 = slice_int_from_array(arr2, 10);
+    
+    /* Create slice from vector */
+    Vec_int v = vec_int_new();
+    vec_int_push(&v, base_val);
+    vec_int_push(&v, base_val + 1);
+    Slice_int s3 = slice_int_from_vec(&v);
+    
+    /* Create subslice */
+    Slice_int s4 = slice_int_subslice(s2, 2, 7);
+    
+    /* All vtable pointers should be non-null */
+    if (s1.vt == NULL || s2.vt == NULL || s3.vt == NULL || s4.vt == NULL) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* All vtable pointers should point to the same address */
+    if (s1.vt != s2.vt || s2.vt != s3.vt || s3.vt != s4.vt) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -197,6 +262,120 @@ typedef struct {
     theft_propfun1 *prop;
     enum theft_builtin_type_info type;
 } SliceTest;
+
+/*============================================================================
+ * Property 4: Slice vtable behavioral equivalence
+ * For any Slice_T instance, any valid index, and any valid subslice range,
+ * calling operations through the vtable (s.vt->get, s.vt->subslice) shall
+ * produce identical results to calling the standalone functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_slice_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int base_val = (int)(*val_ptr);
+    
+    /* Create an array with known values */
+    int arr[10];
+    for (int i = 0; i < 10; i++) {
+        arr[i] = base_val + i * 10;
+    }
+    
+    Slice_int s = slice_int_from_array(arr, 10);
+    
+    /* Test len equivalence: vtable vs standalone */
+    size_t len_vtable = s.vt->len(s);
+    size_t len_standalone = slice_int_len(s);
+    
+    if (len_vtable != len_standalone) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test get equivalence for all valid indices */
+    for (size_t i = 0; i < len_vtable; i++) {
+        Option_int opt_vtable = s.vt->get(s, i);
+        Option_int opt_standalone = slice_int_get(s, i);
+        
+        if (is_some(opt_vtable) != is_some(opt_standalone)) {
+            return THEFT_TRIAL_FAIL;
+        }
+        
+        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test get out-of-bounds equivalence */
+    Option_int oob_vtable = s.vt->get(s, len_vtable + 10);
+    Option_int oob_standalone = slice_int_get(s, len_standalone + 10);
+    
+    if (is_none(oob_vtable) != is_none(oob_standalone)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test subslice equivalence */
+    size_t start = 2;
+    size_t end = 7;
+    Slice_int sub_vtable = s.vt->subslice(s, start, end);
+    Slice_int sub_standalone = slice_int_subslice(s, start, end);
+    
+    /* Verify subslice lengths are equal */
+    if (sub_vtable.vt->len(sub_vtable) != slice_int_len(sub_standalone)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Verify subslice elements are equal */
+    for (size_t i = 0; i < slice_int_len(sub_standalone); i++) {
+        Option_int elem_vtable = sub_vtable.vt->get(sub_vtable, i);
+        Option_int elem_standalone = slice_int_get(sub_standalone, i);
+        
+        if (is_some(elem_vtable) != is_some(elem_standalone)) {
+            return THEFT_TRIAL_FAIL;
+        }
+        
+        if (is_some(elem_vtable) && unwrap(elem_vtable) != unwrap(elem_standalone)) {
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test subslice with clamped bounds (start > end) */
+    Slice_int clamped_vtable = s.vt->subslice(s, 5, 3);
+    Slice_int clamped_standalone = slice_int_subslice(s, 5, 3);
+    
+    if (clamped_vtable.vt->len(clamped_vtable) != slice_int_len(clamped_standalone)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test subslice with bounds beyond length */
+    Slice_int beyond_vtable = s.vt->subslice(s, 8, 15);
+    Slice_int beyond_standalone = slice_int_subslice(s, 8, 15);
+    
+    if (beyond_vtable.vt->len(beyond_vtable) != slice_int_len(beyond_standalone)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test convenience macros equivalence */
+    if (SLICE_LEN(s) != slice_int_len(s)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    Option_int macro_get = SLICE_GET(s, 3);
+    Option_int direct_get = slice_int_get(s, 3);
+    if (is_some(macro_get) != is_some(direct_get)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    if (is_some(macro_get) && unwrap(macro_get) != unwrap(direct_get)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    Slice_int macro_sub = SLICE_SUBSLICE(s, 1, 5);
+    Slice_int direct_sub = slice_int_subslice(s, 1, 5);
+    if (SLICE_LEN(macro_sub) != slice_int_len(direct_sub)) {
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    return THEFT_TRIAL_PASS;
+}
 
 static SliceTest slice_tests[] = {
     {
@@ -212,6 +391,16 @@ static SliceTest slice_tests[] = {
     {
         "Property 15: slice length matches source",
         prop_slice_length,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (Slice)",
+        prop_shared_slice_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 4 (vtable): Slice vtable behavioral equivalence",
+        prop_slice_vtable_behavioral_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

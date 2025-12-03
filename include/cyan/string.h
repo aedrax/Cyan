@@ -40,6 +40,23 @@ VECTOR_DEFINE(char);
 /* Define Slice_char for string slicing */
 SLICE_DEFINE(char);
 
+/* Forward declare String for use in vtable */
+typedef struct String String;
+
+/**
+ * @brief Vtable structure for String containing function pointers
+ */
+typedef struct {
+    void (*push)(String *s, char c);
+    void (*append)(String *s, const char *cstr);
+    void (*clear)(String *s);
+    Option_char (*get)(const String *s, size_t idx);
+    size_t (*len)(const String *s);
+    const char *(*cstr)(const String *s);
+    Slice_char (*slice)(const String *s, size_t start, size_t end);
+    void (*free)(String *s);
+} StringVT;
+
 /**
  * @brief Dynamic string type
  * 
@@ -47,12 +64,17 @@ SLICE_DEFINE(char);
  * - data: null-terminated character buffer
  * - len: length excluding null terminator
  * - cap: capacity including null terminator
+ * - vt: pointer to shared vtable
  */
-typedef struct {
+struct String {
     char *data;      /* Null-terminated buffer */
     size_t len;      /* Length excluding null terminator */
     size_t cap;      /* Capacity including null terminator */
-} String;
+    const StringVT *vt;  /* Pointer to shared vtable */
+};
+
+/* Forward declare vtable instance */
+static const StringVT _string_vt;
 
 /*============================================================================
  * Constructors
@@ -63,7 +85,7 @@ typedef struct {
  * @return A new empty String
  */
 static inline String string_new(void) {
-    return (String){ .data = NULL, .len = 0, .cap = 0 };
+    return (String){ .data = NULL, .len = 0, .cap = 0, .vt = &_string_vt };
 }
 
 /**
@@ -81,7 +103,7 @@ static inline String string_from(const char *cstr) {
     char *data = (char *)malloc(cap);
     if (!data) CYAN_PANIC("allocation failed");
     memcpy(data, cstr, cap);  /* Includes null terminator */
-    return (String){ .data = data, .len = len, .cap = cap };
+    return (String){ .data = data, .len = len, .cap = cap, .vt = &_string_vt };
 }
 
 /**
@@ -98,7 +120,7 @@ static inline String string_with_capacity(size_t cap) {
     char *data = (char *)malloc(actual_cap);
     if (!data) CYAN_PANIC("allocation failed");
     data[0] = '\0';
-    return (String){ .data = data, .len = 0, .cap = actual_cap };
+    return (String){ .data = data, .len = 0, .cap = actual_cap, .vt = &_string_vt };
 }
 
 /*============================================================================
@@ -290,12 +312,12 @@ static inline Option_char string_get(const String *s, size_t idx) {
  */
 static inline Slice_char string_slice(const String *s, size_t start, size_t end) {
     if (!s->data || s->len == 0) {
-        return (Slice_char){ .data = NULL, .len = 0 };
+        return (Slice_char){ .data = NULL, .len = 0, .vt = &_slice_char_vt };
     }
     if (start > s->len) start = s->len;
     if (end > s->len) end = s->len;
     if (start > end) start = end;
-    return (Slice_char){ .data = s->data + start, .len = end - start };
+    return (Slice_char){ .data = s->data + start, .len = end - start, .vt = &_slice_char_vt };
 }
 
 /**
@@ -305,9 +327,9 @@ static inline Slice_char string_slice(const String *s, size_t start, size_t end)
  */
 static inline Slice_char string_as_slice(const String *s) {
     if (!s->data) {
-        return (Slice_char){ .data = NULL, .len = 0 };
+        return (Slice_char){ .data = NULL, .len = 0, .vt = &_slice_char_vt };
     }
-    return (Slice_char){ .data = s->data, .len = s->len };
+    return (Slice_char){ .data = s->data, .len = s->len, .vt = &_slice_char_vt };
 }
 
 /*============================================================================
@@ -322,6 +344,12 @@ static inline Slice_char string_as_slice(const String *s) {
  */
 static inline String string_concat(const String *a, const String *b) {
     size_t total_len = a->len + b->len;
+    
+    /* Handle empty result case */
+    if (total_len == 0) {
+        return string_new();
+    }
+    
     String result = string_with_capacity(total_len);
     
     if (a->data && a->len > 0) {
@@ -367,5 +395,84 @@ static inline void string_free(String *s) {
  */
 #define string_auto(name, init) \
     __attribute__((cleanup(string_free))) String name = (init)
+
+/*============================================================================
+ * Vtable Instance
+ *============================================================================*/
+
+/**
+ * @brief Static const vtable instance shared by all String instances
+ */
+static const StringVT _string_vt = {
+    .push = string_push,
+    .append = string_append,
+    .clear = string_clear,
+    .get = string_get,
+    .len = string_len,
+    .cstr = string_cstr,
+    .slice = string_slice,
+    .free = string_free
+};
+
+/*============================================================================
+ * String Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Push a character to the string via vtable
+ * @param s The string (not a pointer)
+ * @param c Character to append
+ */
+#define STR_PUSH(s, c) ((s).vt->push(&(s), (c)))
+
+/**
+ * @brief Append a C string to the string via vtable
+ * @param s The string (not a pointer)
+ * @param cstr C string to append
+ */
+#define STR_APPEND(s, cstr) ((s).vt->append(&(s), (cstr)))
+
+/**
+ * @brief Clear the string content via vtable
+ * @param s The string (not a pointer)
+ */
+#define STR_CLEAR(s) ((s).vt->clear(&(s)))
+
+/**
+ * @brief Get character at index via vtable
+ * @param s The string (not a pointer)
+ * @param idx Index to access
+ * @return Option_char containing the character, or None if out of bounds
+ */
+#define STR_GET(s, idx) ((s).vt->get(&(s), (idx)))
+
+/**
+ * @brief Get the length of the string via vtable
+ * @param s The string (not a pointer)
+ * @return Number of characters (excluding null terminator)
+ */
+#define STR_LEN(s) ((s).vt->len(&(s)))
+
+/**
+ * @brief Get the null-terminated C string via vtable
+ * @param s The string (not a pointer)
+ * @return Pointer to null-terminated character array
+ */
+#define STR_CSTR(s) ((s).vt->cstr(&(s)))
+
+/**
+ * @brief Create a slice view of a portion of the string via vtable
+ * @param s The string (not a pointer)
+ * @param start Start index (inclusive)
+ * @param end End index (exclusive)
+ * @return Slice_char viewing the specified range
+ */
+#define STR_SLICE(s, start, end) ((s).vt->slice(&(s), (start), (end)))
+
+/**
+ * @brief Free all memory associated with the string via vtable
+ * @param s The string (not a pointer)
+ */
+#define STR_FREE(s) ((s).vt->free(&(s)))
 
 #endif /* CYAN_STRING_H */

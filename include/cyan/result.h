@@ -25,6 +25,10 @@
  * Result Type Definition
  *============================================================================*/
 
+/* Forward declare vtable struct */
+#define RESULT_VT_FORWARD(T, E) \
+    typedef struct ResultVT_##T##_##E ResultVT_##T##_##E
+
 /**
  * @brief Generate a Result type for given value and error types
  * @param T The success value type
@@ -34,19 +38,64 @@
  * - is_ok: bool indicating success or failure
  * - ok_value: the success value of type T (in union)
  * - err_value: the error value of type E (in union)
+ * - vt: pointer to shared vtable
  * 
  * Example:
  *   RESULT_DEFINE(int, const char*);  // Creates Result_int_const_charp
  *   RESULT_DEFINE(double, int);       // Creates Result_double_int
  */
 #define RESULT_DEFINE(T, E) \
+    RESULT_VT_FORWARD(T, E); \
+    \
     typedef struct { \
         bool is_ok_flag; \
         union { \
             T ok_value; \
             E err_value; \
         }; \
-    } Result_##T##_##E
+        const ResultVT_##T##_##E *vt; \
+    } Result_##T##_##E; \
+    \
+    /* Vtable function implementations */ \
+    static inline bool _result_##T##_##E##_is_ok(const Result_##T##_##E *res) { \
+        return res->is_ok_flag; \
+    } \
+    \
+    static inline bool _result_##T##_##E##_is_err(const Result_##T##_##E *res) { \
+        return !res->is_ok_flag; \
+    } \
+    \
+    static inline T _result_##T##_##E##_unwrap_ok(const Result_##T##_##E *res) { \
+        if (!res->is_ok_flag) CYAN_PANIC("unwrap_ok called on Err"); \
+        return res->ok_value; \
+    } \
+    \
+    static inline E _result_##T##_##E##_unwrap_err(const Result_##T##_##E *res) { \
+        if (res->is_ok_flag) CYAN_PANIC("unwrap_err called on Ok"); \
+        return res->err_value; \
+    } \
+    \
+    static inline T _result_##T##_##E##_unwrap_ok_or(const Result_##T##_##E *res, T default_val) { \
+        return res->is_ok_flag ? res->ok_value : default_val; \
+    } \
+    \
+    /* Vtable structure */ \
+    struct ResultVT_##T##_##E { \
+        bool (*res_is_ok)(const Result_##T##_##E *res); \
+        bool (*res_is_err)(const Result_##T##_##E *res); \
+        T (*res_unwrap_ok)(const Result_##T##_##E *res); \
+        E (*res_unwrap_err)(const Result_##T##_##E *res); \
+        T (*res_unwrap_ok_or)(const Result_##T##_##E *res, T default_val); \
+    }; \
+    \
+    /* Static const vtable instance */ \
+    static const ResultVT_##T##_##E _result_##T##_##E##_vt __attribute__((unused)) = { \
+        .res_is_ok = _result_##T##_##E##_is_ok, \
+        .res_is_err = _result_##T##_##E##_is_err, \
+        .res_unwrap_ok = _result_##T##_##E##_unwrap_ok, \
+        .res_unwrap_err = _result_##T##_##E##_unwrap_err, \
+        .res_unwrap_ok_or = _result_##T##_##E##_unwrap_ok_or \
+    }
 
 /*============================================================================
  * Constructors
@@ -57,24 +106,24 @@
  * @param T The success type
  * @param E The error type
  * @param val The success value to wrap
- * @return Result_T_E with is_ok_flag = true
+ * @return Result_T_E with is_ok_flag = true and vt pointer set
  * 
  * Example:
  *   Result_int_const_charp x = Ok(int, const_charp, 42);
  */
-#define Ok(T, E, val) ((Result_##T##_##E){ .is_ok_flag = true, .ok_value = (val) })
+#define Ok(T, E, val) ((Result_##T##_##E){ .is_ok_flag = true, .ok_value = (val), .vt = &_result_##T##_##E##_vt })
 
 /**
  * @brief Create a Result containing an error value
  * @param T The success type
  * @param E The error type
  * @param err The error value to wrap
- * @return Result_T_E with is_ok_flag = false
+ * @return Result_T_E with is_ok_flag = false and vt pointer set
  * 
  * Example:
  *   Result_int_const_charp x = Err(int, const_charp, "parse error");
  */
-#define Err(T, E, err) ((Result_##T##_##E){ .is_ok_flag = false, .err_value = (err) })
+#define Err(T, E, err) ((Result_##T##_##E){ .is_ok_flag = false, .err_value = (err), .vt = &_result_##T##_##E##_vt })
 
 /*============================================================================
  * Predicates
@@ -173,5 +222,47 @@
  */
 #define map_err(res, T, E_out, fn) \
     (is_ok(res) ? Ok(T, E_out, (res).ok_value) : Err(T, E_out, fn((res).err_value)))
+
+/*============================================================================
+ * Vtable Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Check if a Result is success (via vtable)
+ * @param res The Result to check
+ * @return true if the Result is Ok, false otherwise
+ */
+#define RES_IS_OK(res) ((res).vt->res_is_ok(&(res)))
+
+/**
+ * @brief Check if a Result is error (via vtable)
+ * @param res The Result to check
+ * @return true if the Result is Err, false otherwise
+ */
+#define RES_IS_ERR(res) ((res).vt->res_is_err(&(res)))
+
+/**
+ * @brief Extract the success value from a Result (via vtable), panicking if error
+ * @param res The Result to unwrap
+ * @return The contained success value
+ * @note Panics if the Result is Err
+ */
+#define RES_UNWRAP_OK(res) ((res).vt->res_unwrap_ok(&(res)))
+
+/**
+ * @brief Extract the error value from a Result (via vtable), panicking if success
+ * @param res The Result to unwrap
+ * @return The contained error value
+ * @note Panics if the Result is Ok
+ */
+#define RES_UNWRAP_ERR(res) ((res).vt->res_unwrap_err(&(res)))
+
+/**
+ * @brief Extract the success value from a Result (via vtable), or return a default
+ * @param res The Result to unwrap
+ * @param default_val The default value if Result is Err
+ * @return The contained success value if Ok, otherwise default_val
+ */
+#define RES_UNWRAP_OK_OR(res, default_val) ((res).vt->res_unwrap_ok_or(&(res), (default_val)))
 
 #endif /* CYAN_RESULT_H */

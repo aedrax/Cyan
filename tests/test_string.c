@@ -69,6 +69,13 @@ static enum theft_trial_res prop_append_preserves_content(struct theft *t, void 
     
     /* Create a string and append the input */
     String s = string_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     string_append(&s, input);
     
     /* Verify length matches */
@@ -127,6 +134,13 @@ static enum theft_trial_res prop_format_correct_output(struct theft *t, void *ar
     
     /* Format using string_format */
     String s = string_new();
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     string_format(&s, "Value: %d", val);
     
     /* Format using sprintf for comparison */
@@ -167,6 +181,13 @@ static enum theft_trial_res prop_slice_matches_substring(struct theft *t, void *
     const char *input = (const char *)arg1;
     
     String s = string_from(input);
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     size_t len = string_len(&s);
     
     /* Skip empty strings */
@@ -210,6 +231,13 @@ static enum theft_trial_res prop_cstr_null_terminated(struct theft *t, void *arg
     const char *input = (const char *)arg1;
     
     String s = string_from(input);
+    
+    /* Verify vt pointer is set after creation */
+    if (s.vt == NULL) {
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     const char *cstr = string_cstr(&s);
     
     /* Verify null termination at correct position */
@@ -274,6 +302,14 @@ static enum theft_trial_res prop_concat_combines_content(struct theft *t, void *
     String a = string_from(input_a);
     String b = string_from(input_b);
     
+    /* Verify vt pointer is set after creation */
+    if (a.vt == NULL || b.vt == NULL) {
+        string_free(&a);
+        string_free(&b);
+        free(input_b);
+        return THEFT_TRIAL_FAIL;
+    }
+    
     String result = string_concat(&a, &b);
     
     /* Verify length is sum of both */
@@ -309,6 +345,186 @@ static enum theft_trial_res prop_concat_combines_content(struct theft *t, void *
     string_free(&b);
     string_free(&result);
     free(input_b);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 1 (vtable): Shared vtable instances (String)
+ * For any two instances of String, their vtable pointers shall be equal
+ * (point to the same address).
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_string_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Create multiple String instances using different constructors */
+    String s1 = string_new();
+    String s2 = string_new();
+    String s3 = string_from("Hello");
+    String s4 = string_from("World");
+    String s5 = string_with_capacity(10);
+    String s6 = string_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
+    
+    /* All vtable pointers should be non-null */
+    if (s1.vt == NULL || s2.vt == NULL || s3.vt == NULL || 
+        s4.vt == NULL || s5.vt == NULL || s6.vt == NULL) {
+        string_free(&s1);
+        string_free(&s2);
+        string_free(&s3);
+        string_free(&s4);
+        string_free(&s5);
+        string_free(&s6);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* All vtable pointers should point to the same address */
+    if (s1.vt != s2.vt || s2.vt != s3.vt || s3.vt != s4.vt || 
+        s4.vt != s5.vt || s5.vt != s6.vt) {
+        string_free(&s1);
+        string_free(&s2);
+        string_free(&s3);
+        string_free(&s4);
+        string_free(&s5);
+        string_free(&s6);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    string_free(&s1);
+    string_free(&s2);
+    string_free(&s3);
+    string_free(&s4);
+    string_free(&s5);
+    string_free(&s6);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 5 (vtable): String vtable behavioral equivalence
+ * For any String instance, any valid character, any valid C string, and any
+ * valid index, calling operations through the vtable shall produce identical
+ * results to calling the standalone functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_string_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    const char *input = (const char *)arg1;
+    
+    /* Create two identical strings - one for vtable ops, one for standalone ops */
+    String s_vtable = string_from("Initial");
+    String s_standalone = string_from("Initial");
+    
+    /* Test push equivalence: vtable vs standalone */
+    char c = 'X';
+    s_vtable.vt->push(&s_vtable, c);
+    string_push(&s_standalone, c);
+    
+    /* Test len equivalence */
+    size_t len_vtable = s_vtable.vt->len(&s_vtable);
+    size_t len_standalone = string_len(&s_standalone);
+    
+    if (len_vtable != len_standalone) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test cstr equivalence */
+    const char *cstr_vtable = s_vtable.vt->cstr(&s_vtable);
+    const char *cstr_standalone = string_cstr(&s_standalone);
+    
+    if (strcmp(cstr_vtable, cstr_standalone) != 0) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test append equivalence */
+    s_vtable.vt->append(&s_vtable, input);
+    string_append(&s_standalone, input);
+    
+    if (s_vtable.vt->len(&s_vtable) != string_len(&s_standalone)) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (strcmp(s_vtable.vt->cstr(&s_vtable), string_cstr(&s_standalone)) != 0) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test get equivalence for all indices */
+    for (size_t i = 0; i < s_vtable.vt->len(&s_vtable); i++) {
+        Option_char opt_vtable = s_vtable.vt->get(&s_vtable, i);
+        Option_char opt_standalone = string_get(&s_standalone, i);
+        
+        if (is_some(opt_vtable) != is_some(opt_standalone)) {
+            string_free(&s_vtable);
+            string_free(&s_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+        
+        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
+            string_free(&s_vtable);
+            string_free(&s_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test get out-of-bounds equivalence */
+    Option_char oob_vtable = s_vtable.vt->get(&s_vtable, len_vtable + 100);
+    Option_char oob_standalone = string_get(&s_standalone, len_standalone + 100);
+    
+    if (is_none(oob_vtable) != is_none(oob_standalone)) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Test slice equivalence */
+    size_t slice_start = 0;
+    size_t slice_end = s_vtable.vt->len(&s_vtable) / 2;
+    
+    Slice_char slice_vtable = s_vtable.vt->slice(&s_vtable, slice_start, slice_end);
+    Slice_char slice_standalone = string_slice(&s_standalone, slice_start, slice_end);
+    
+    if (slice_vtable.len != slice_standalone.len) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    for (size_t i = 0; i < slice_vtable.len; i++) {
+        if (slice_vtable.data[i] != slice_standalone.data[i]) {
+            string_free(&s_vtable);
+            string_free(&s_standalone);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+    
+    /* Test clear equivalence */
+    s_vtable.vt->clear(&s_vtable);
+    string_clear(&s_standalone);
+    
+    if (s_vtable.vt->len(&s_vtable) != string_len(&s_standalone)) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (s_vtable.vt->len(&s_vtable) != 0) {
+        string_free(&s_vtable);
+        string_free(&s_standalone);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Cleanup using vtable free for one, standalone for other */
+    s_vtable.vt->free(&s_vtable);
+    string_free(&s_standalone);
+    
     return THEFT_TRIAL_PASS;
 }
 
@@ -363,6 +579,22 @@ static StringTest string_tests[] = {
     {
         "Property 50: String concat combines content",
         prop_concat_combines_content,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 1 (vtable): Shared vtable instances (String) */
+    {
+        "Property 1 (vtable): Shared vtable instances (String)",
+        prop_shared_string_vtable,
+        NULL,
+        THEFT_BUILTIN_int64_t,
+        true
+    },
+    /* Property 5 (vtable): String vtable behavioral equivalence */
+    {
+        "Property 5 (vtable): String vtable behavioral equivalence",
+        prop_string_vtable_behavioral_equivalence,
         &string_gen_type_info,
         0,
         false

@@ -35,6 +35,7 @@
  * - data: pointer to element array
  * - len: current number of elements
  * - cap: current capacity
+ * - vt: pointer to shared vtable
  * 
  * Also generates the following functions:
  * - vec_T_new(): Create empty vector
@@ -45,25 +46,49 @@
  * - vec_T_len(v): Get current length
  * - vec_T_free(v): Free vector memory
  * 
+ * Also generates a vtable struct VecVT_T and convenience macros:
+ * - VEC_PUSH(v, elem), VEC_POP(v), VEC_GET(v, idx), VEC_LEN(v), VEC_FREE(v)
+ * 
  * Requires: OPTION_DEFINE(T) must be called before VECTOR_DEFINE(T)
  * 
  * Example:
  *   OPTION_DEFINE(int);
- *   VECTOR_DEFINE(int);  // Creates Vec_int and vec_int_* functions
+ *   VECTOR_DEFINE(int);  // Creates Vec_int, VecVT_int, and vec_int_* functions
  */
 #define VECTOR_DEFINE(T) \
+    /* Forward declare Vec_T for use in vtable */ \
+    typedef struct Vec_##T Vec_##T; \
+    \
+    /** \
+     * @brief Vtable structure for Vec_T containing function pointers \
+     */ \
     typedef struct { \
+        void (*push)(Vec_##T *v, T elem); \
+        Option_##T (*pop)(Vec_##T *v); \
+        Option_##T (*get)(Vec_##T *v, size_t idx); \
+        size_t (*len)(Vec_##T *v); \
+        void (*free)(Vec_##T *v); \
+    } VecVT_##T; \
+    \
+    /** \
+     * @brief Vector structure with vtable pointer \
+     */ \
+    struct Vec_##T { \
         T *data; \
         size_t len; \
         size_t cap; \
-    } Vec_##T; \
+        const VecVT_##T *vt; \
+    }; \
+    \
+    /* Forward declare vtable instance */ \
+    static const VecVT_##T _vec_##T##_vt; \
     \
     /** \
      * @brief Create an empty vector \
      * @return A new empty Vec_T with no allocated storage \
      */ \
     static inline Vec_##T vec_##T##_new(void) { \
-        return (Vec_##T){ .data = NULL, .len = 0, .cap = 0 }; \
+        return (Vec_##T){ .data = NULL, .len = 0, .cap = 0, .vt = &_vec_##T##_vt }; \
     } \
     \
     /** \
@@ -73,7 +98,7 @@
      * @note Panics if allocation fails \
      */ \
     static inline Vec_##T vec_##T##_with_capacity(size_t cap) { \
-        Vec_##T v = { .data = NULL, .len = 0, .cap = cap }; \
+        Vec_##T v = { .data = NULL, .len = 0, .cap = cap, .vt = &_vec_##T##_vt }; \
         if (cap > 0) { \
             v.data = (T *)malloc(cap * sizeof(T)); \
             if (!v.data) CYAN_PANIC("allocation failed"); \
@@ -140,7 +165,57 @@
         v->len = 0; \
         v->cap = 0; \
     } \
+    \
+    /** \
+     * @brief Static const vtable instance shared by all Vec_T instances \
+     */ \
+    static const VecVT_##T _vec_##T##_vt = { \
+        .push = vec_##T##_push, \
+        .pop = vec_##T##_pop, \
+        .get = vec_##T##_get, \
+        .len = vec_##T##_len, \
+        .free = vec_##T##_free \
+    }; \
     /* Dummy typedef to absorb trailing semicolon */ \
     typedef Vec_##T Vec_##T##_defined
+
+/*============================================================================
+ * Vector Convenience Macros
+ *============================================================================*/
+
+/**
+ * @brief Push an element to the vector via vtable
+ * @param v The vector (not a pointer)
+ * @param elem Element to append
+ */
+#define VEC_PUSH(v, elem) ((v).vt->push(&(v), (elem)))
+
+/**
+ * @brief Pop the last element from the vector via vtable
+ * @param v The vector (not a pointer)
+ * @return Option containing the last element, or None if empty
+ */
+#define VEC_POP(v) ((v).vt->pop(&(v)))
+
+/**
+ * @brief Get element at index via vtable
+ * @param v The vector (not a pointer)
+ * @param idx Index to access
+ * @return Option containing the element, or None if out of bounds
+ */
+#define VEC_GET(v, idx) ((v).vt->get(&(v), (idx)))
+
+/**
+ * @brief Get the current length via vtable
+ * @param v The vector (not a pointer)
+ * @return Current length
+ */
+#define VEC_LEN(v) ((v).vt->len(&(v)))
+
+/**
+ * @brief Free all memory associated with the vector via vtable
+ * @param v The vector (not a pointer)
+ */
+#define VEC_FREE(v) ((v).vt->free(&(v)))
 
 #endif /* CYAN_VECTOR_H */

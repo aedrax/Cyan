@@ -141,6 +141,54 @@ i32 main(void) {
     vec_i32_free(&v);
     vec_f64_free(&v_doubled);
     
+    // Example 7: Vtable API with Functional Operations
+    printf("\n7. Vtable API with Functional Operations:\n");
+    
+    // Create vector using vtable macros
+    Vec_i32 vt_vec = vec_i32_new();
+    for (i32 i = 1; i <= 5; i++) {
+        VEC_PUSH(vt_vec, i * 10);
+    }
+    
+    printf("   Vector created with VEC_PUSH: ");
+    for (usize i = 0; i < VEC_LEN(vt_vec); i++) {
+        Option_i32 elem = VEC_GET(vt_vec, i);
+        if (OPT_IS_SOME(elem)) {
+            printf("%d ", OPT_UNWRAP(elem));
+        }
+    }
+    printf("\n");
+    
+    // Apply functional operations, access results via vtable
+    printf("   Applying map (square) via vtable access:\n");
+    i32 vt_data[5];
+    for (usize i = 0; i < VEC_LEN(vt_vec); i++) {
+        Option_i32 elem = vt_vec.vt->get(&vt_vec, i);
+        if (elem.vt->opt_is_some(&elem)) {
+            vt_data[i] = elem.vt->opt_unwrap(&elem);
+        }
+    }
+    
+    i32 vt_squared[5];
+    map(vt_data, 5, vt_squared, square);
+    printf("      Squared: ");
+    foreach(vt_squared, 5, print_i32);
+    printf("\n");
+    
+    // Filter and reduce with vtable-style access
+    i32 vt_evens[5];
+    usize vt_evens_len;
+    filter(vt_data, 5, vt_evens, &vt_evens_len, is_even);
+    printf("   Filtered evens: ");
+    foreach(vt_evens, vt_evens_len, print_i32);
+    printf("(count: %zu)\n", vt_evens_len);
+    
+    i32 vt_sum;
+    reduce(vt_sum, vt_data, 5, 0, add);
+    printf("   Sum via reduce: %d\n", vt_sum);
+    
+    VEC_FREE(vt_vec);
+    
     printf("\n=== Done ===\n");
     return 0;
 }

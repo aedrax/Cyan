@@ -119,6 +119,40 @@ i32 main(void) {
     i32 squared = match_result_expr(res, i32, const_charp, i32, v, err, v * v, 0);
     printf("   Ok(10) squared: %d\n", squared);
     
+    // Example 6: Vtable API with Pattern Matching
+    printf("\n6. Vtable API with Pattern Matching:\n");
+    
+    // Using vtable macros before pattern matching
+    Option_i32 vt_opt = Some(i32, 100);
+    printf("   Using vtable macros for checks:\n");
+    if (OPT_IS_SOME(vt_opt)) {
+        printf("      OPT_IS_SOME(vt_opt) = true, value = %d\n", OPT_UNWRAP(vt_opt));
+    }
+    
+    Result_i32_const_charp vt_res = Ok(i32, const_charp, 50);
+    if (RES_IS_OK(vt_res)) {
+        printf("      RES_IS_OK(vt_res) = true, value = %d\n", RES_UNWRAP_OK(vt_res));
+    }
+    
+    // Combining vtable API with pattern matching
+    printf("   Combining vtable checks with match:\n");
+    Option_i32 maybe = Some(i32, 25);
+    if (OPT_IS_SOME(maybe)) {
+        match_option(maybe, i32, val,
+            { printf("      Vtable confirmed Some, match got: %d\n", val); },
+            { printf("      Unexpected None\n"); }
+        );
+    }
+    
+    // Using unwrap_or via vtable for safe defaults
+    Option_i32 empty_opt = None(i32);
+    i32 safe_val = OPT_UNWRAP_OR(empty_opt, 999);
+    printf("   OPT_UNWRAP_OR(None, 999) = %d\n", safe_val);
+    
+    Result_i32_const_charp err_result = Err(i32, const_charp, "failed");
+    i32 safe_res = RES_UNWRAP_OK_OR(err_result, -1);
+    printf("   RES_UNWRAP_OK_OR(Err, -1) = %d\n", safe_res);
+    
     printf("\n=== Done ===\n");
     return 0;
 }

@@ -30,6 +30,7 @@ extern int run_string_tests(theft_seed seed);
 extern int run_match_tests(theft_seed seed);
 extern int run_channel_tests(theft_seed seed);
 extern int run_types_tests(theft_seed seed);
+extern int run_vtable_macro_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -182,8 +183,8 @@ static void run_all_tests(void) {
     /* Vector type tests */
     int vector_failures = run_vector_tests(seed);
     g_results.failed += vector_failures;
-    g_results.passed += (4 - vector_failures);  /* 4 vector tests */
-    g_results.total += 4;
+    g_results.passed += (6 - vector_failures);  /* 6 vector tests */
+    g_results.total += 6;
 
     /* Slice type tests */
     int slice_failures = run_slice_tests(seed);
@@ -224,8 +225,8 @@ static void run_all_tests(void) {
     /* Hash map tests */
     int hashmap_failures = run_hashmap_tests(seed);
     g_results.failed += hashmap_failures;
-    g_results.passed += (4 - hashmap_failures);  /* 4 hashmap tests */
-    g_results.total += 4;
+    g_results.passed += (6 - hashmap_failures);  /* 6 hashmap tests */
+    g_results.total += 6;
 
     /* String tests */
     int string_failures = run_string_tests(seed);
@@ -242,14 +243,20 @@ static void run_all_tests(void) {
     /* Channel tests */
     int channel_failures = run_channel_tests(seed);
     g_results.failed += channel_failures;
-    g_results.passed += (6 - channel_failures);  /* 6 channel tests */
-    g_results.total += 6;
+    g_results.passed += (8 - channel_failures);  /* 8 channel tests */
+    g_results.total += 8;
 
     /* Primitive type alias tests */
     int types_failures = run_types_tests(seed);
     g_results.failed += types_failures;
     g_results.passed += (6 - types_failures);  /* 6 types tests */
     g_results.total += 6;
+
+    /* Vtable convenience macro tests */
+    int vtable_macro_failures = run_vtable_macro_tests(seed);
+    g_results.failed += vtable_macro_failures;
+    g_results.passed += (4 - vtable_macro_failures);  /* 4 vtable macro tests */
+    g_results.total += 4;
 
     printf("\n");
 }

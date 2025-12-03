@@ -414,6 +414,162 @@ static enum theft_trial_res prop_weak_is_expired(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
+ * Property 1 (vtable): Shared vtable instances (UniquePtr)
+ * For any two UniquePtr_T instances, their vtable pointers shall be equal
+ *============================================================================*/
+
+static enum theft_trial_res prop_unique_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    UniquePtr_int p1 = unique_int_new(val);
+    UniquePtr_int p2 = unique_int_new(val + 1);
+    
+    /* All vtable pointers should be equal (shared) */
+    if (p1.vt != p2.vt) {
+        unique_int_free(&p1);
+        unique_int_free(&p2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Vtable should not be NULL */
+    if (p1.vt == NULL) {
+        unique_int_free(&p1);
+        unique_int_free(&p2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    unique_int_free(&p1);
+    unique_int_free(&p2);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 9 (vtable): UniquePtr vtable behavioral equivalence
+ * For any UniquePtr_T instance, vtable operations produce identical results
+ *============================================================================*/
+
+static enum theft_trial_res prop_unique_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    UniquePtr_int p = unique_int_new(val);
+    
+    /* get equivalence */
+    if (unique_int_get(&p) != UPTR_GET(p)) {
+        unique_int_free(&p);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unique_int_get(&p) != p.vt->uptr_get(&p)) {
+        unique_int_free(&p);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* deref equivalence */
+    if (unique_int_deref(&p) != UPTR_DEREF(p)) {
+        unique_int_free(&p);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (unique_int_deref(&p) != p.vt->uptr_deref(&p)) {
+        unique_int_free(&p);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    unique_int_free(&p);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 1 (vtable): Shared vtable instances (SharedPtr)
+ * For any two SharedPtr_T instances, their vtable pointers shall be equal
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    SharedPtr_int s1 = shared_int_new(val);
+    SharedPtr_int s2 = shared_int_new(val + 1);
+    SharedPtr_int s3 = shared_int_clone(&s1);
+    
+    /* All vtable pointers should be equal (shared) */
+    if (s1.vt != s2.vt) {
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        shared_int_release(&s3);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (s1.vt != s3.vt) {
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        shared_int_release(&s3);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Vtable should not be NULL */
+    if (s1.vt == NULL) {
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        shared_int_release(&s3);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    shared_int_release(&s1);
+    shared_int_release(&s2);
+    shared_int_release(&s3);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 10 (vtable): SharedPtr vtable behavioral equivalence
+ * For any SharedPtr_T instance, vtable operations produce identical results
+ *============================================================================*/
+
+static enum theft_trial_res prop_shared_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    SharedPtr_int s = shared_int_new(val);
+    
+    /* get equivalence */
+    if (shared_int_get(&s) != SPTR_GET(s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (shared_int_get(&s) != s.vt->sptr_get(&s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* deref equivalence */
+    if (shared_int_deref(&s) != SPTR_DEREF(s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (shared_int_deref(&s) != s.vt->sptr_deref(&s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* count equivalence */
+    if (shared_int_count(&s) != SPTR_COUNT(s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (shared_int_count(&s) != s.vt->sptr_count(&s)) {
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    shared_int_release(&s);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -479,6 +635,26 @@ static SmartPtrTest smartptr_tests[] = {
     {
         "Property 41: Weak pointer is_expired correctness",
         prop_weak_is_expired,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (UniquePtr)",
+        prop_unique_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 9 (vtable): UniquePtr vtable behavioral equivalence",
+        prop_unique_vtable_equivalence,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (SharedPtr)",
+        prop_shared_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 10 (vtable): SharedPtr vtable behavioral equivalence",
+        prop_shared_vtable_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };
