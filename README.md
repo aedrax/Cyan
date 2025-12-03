@@ -1,4 +1,5 @@
 # Cyan - Modern C11 Header Library
+> Pronounced "See-yan" because I'm a monster
 
 A header-only C11 library that brings modern programming paradigms to C, including Option/Result types, functional primitives, smart pointers, and more.
 
