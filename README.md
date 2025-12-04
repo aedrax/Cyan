@@ -180,6 +180,15 @@ i32 main(void) {
 | `unwrap_or(opt, default)` | Extract value or return default |
 | `map_option(opt, T_out, fn)` | Transform the contained value |
 
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `OPT_IS_SOME(opt)` | Check if Option has value |
+| `OPT_IS_NONE(opt)` | Check if Option is empty |
+| `OPT_UNWRAP(opt)` | Extract value (panics if None) |
+| `OPT_UNWRAP_OR(opt, def)` | Extract value or return default |
+
 ---
 
 ## Result Type
@@ -228,6 +237,16 @@ i32 main(void) {
 | `unwrap_ok_or(res, default)` | Extract success or return default |
 | `map_result(res, T_out, E, fn)` | Transform success value |
 | `map_err(res, T, E_out, fn)` | Transform error value |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `RES_IS_OK(res)` | Check if Result is success |
+| `RES_IS_ERR(res)` | Check if Result is error |
+| `RES_UNWRAP_OK(res)` | Extract success value (panics if Err) |
+| `RES_UNWRAP_ERR(res)` | Extract error value (panics if Ok) |
+| `RES_UNWRAP_OK_OR(res, def)` | Extract success or return default |
 
 ---
 
@@ -284,6 +303,16 @@ i32 main(void) {
 | `vec_T_len(v)` | Get current length |
 | `vec_T_free(v)` | Free vector memory |
 
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `VEC_PUSH(v, elem)` | Append element |
+| `VEC_POP(v)` | Remove and return last element |
+| `VEC_GET(v, idx)` | Get element at index |
+| `VEC_LEN(v)` | Get current length |
+| `VEC_FREE(v)` | Free vector memory |
+
 ---
 
 ## Slice (Array Views)
@@ -329,6 +358,14 @@ i32 main(void) {
 | `slice_T_get(s, idx)` | Get element at index as Option |
 | `slice_T_subslice(s, start, end)` | Create subslice view |
 | `slice_T_len(s)` | Get slice length |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `SLICE_GET(s, idx)` | Get element at index |
+| `SLICE_SUBSLICE(s, start, end)` | Create subslice view |
+| `SLICE_LEN(s)` | Get slice length |
 
 ---
 
@@ -393,6 +430,17 @@ i32 main(void) {
 | `hashmap_K_V_iter(m)` | Create iterator |
 | `hashmap_K_V_iter_next(it)` | Get next key-value pair |
 | `hashmap_K_V_free(m)` | Free map memory |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `MAP_INSERT(m, k, v)` | Insert or update entry |
+| `MAP_GET(m, k)` | Get value as Option |
+| `MAP_CONTAINS(m, k)` | Check if key exists |
+| `MAP_REMOVE(m, k)` | Remove entry, return value |
+| `MAP_LEN(m)` | Get number of entries |
+| `MAP_FREE(m)` | Free map memory |
 
 ---
 
@@ -469,6 +517,19 @@ i32 main(void) {
 | `string_concat(a, b)` | Concatenate two strings |
 | `string_free(s)` | Free string memory |
 | `string_auto(name, init)` | Declare with auto-cleanup |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `STR_PUSH(s, c)` | Append single character |
+| `STR_APPEND(s, cstr)` | Append C string |
+| `STR_CLEAR(s)` | Clear content |
+| `STR_GET(s, idx)` | Get character as Option |
+| `STR_LEN(s)` | Get length |
+| `STR_CSTR(s)` | Get null-terminated C string |
+| `STR_SLICE(s, start, end)` | Create slice view |
+| `STR_FREE(s)` | Free string memory |
 
 ---
 
@@ -715,12 +776,23 @@ i32 main(void) {
 | `weak_T_is_expired(w)` | Check if target freed |
 | `weak_T_upgrade(w)` | Upgrade to shared pointer |
 | `weak_T_release(w)` | Release weak reference |
-| `w.vt->wptr_is_expired(&w)` | Check if target freed (vtable) |
-| `w.vt->wptr_upgrade(&w)` | Upgrade to shared pointer (vtable) |
-| `w.vt->wptr_release(&w)` | Release weak reference (vtable) |
-| `WPTR_IS_EXPIRED(w)` | Check if target freed (macro) |
-| `WPTR_UPGRADE(w)` | Upgrade to shared pointer (macro) |
-| `WPTR_RELEASE(w)` | Release weak reference (macro) |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `UPTR_GET(u)` | Get raw pointer from UniquePtr |
+| `UPTR_DEREF(u)` | Dereference UniquePtr |
+| `UPTR_MOVE(u)` | Transfer ownership from UniquePtr |
+| `UPTR_FREE(u)` | Free UniquePtr |
+| `SPTR_GET(s)` | Get raw pointer from SharedPtr |
+| `SPTR_DEREF(s)` | Dereference SharedPtr |
+| `SPTR_CLONE(s)` | Clone SharedPtr (increment ref count) |
+| `SPTR_COUNT(s)` | Get reference count |
+| `SPTR_RELEASE(s)` | Release SharedPtr (decrement ref count) |
+| `WPTR_IS_EXPIRED(w)` | Check if WeakPtr target freed |
+| `WPTR_UPGRADE(w)` | Upgrade WeakPtr to SharedPtr |
+| `WPTR_RELEASE(w)` | Release WeakPtr |
 
 ---
 
@@ -922,6 +994,18 @@ i32 main(void) {
 | `chan_T_close(ch)` | Close channel |
 | `chan_T_is_closed(ch)` | Check if closed |
 | `chan_T_free(ch)` | Free channel |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `CHAN_SEND(ch, val)` | Send value to channel |
+| `CHAN_RECV(ch)` | Receive value from channel |
+| `CHAN_TRY_SEND(ch, val)` | Non-blocking send |
+| `CHAN_TRY_RECV(ch)` | Non-blocking receive |
+| `CHAN_CLOSE(ch)` | Close channel |
+| `CHAN_IS_CLOSED(ch)` | Check if closed |
+| `CHAN_FREE(ch)` | Free channel |
 
 **Channel Status:**
 - `CHAN_OK` - Operation succeeded
