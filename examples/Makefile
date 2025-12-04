@@ -21,7 +21,12 @@ EXAMPLES = \
 	06_pattern_matching \
 	07_functional \
 	08_vtable_api \
-	09_panic_handler
+	09_panic_handler \
+	10_channel_communication \
+	11_hashmap_dictionary \
+	12_serialize_parsing \
+	13_slice_views \
+	14_string_manipulation
 
 # Add build directory prefix to examples
 EXAMPLE_BINS = $(addprefix $(BUILD_DIR)/,$(EXAMPLES))

@@ -175,6 +175,59 @@ i32 main(void) {
         SPTR_RELEASE(s);
     }
     
+    // Example 9: Vtable Method-Style API for WeakPtr
+    printf("\n9. WeakPtr Vtable API:\n");
+    {
+        SharedPtr_i32 shared = shared_i32_new(888);
+        WeakPtr_i32 w = weak_i32_from_shared(&shared);
+        
+        // Direct vtable access
+        printf("   Direct vtable access:\n");
+        printf("      w.vt->wptr_is_expired(&w) = %s\n", 
+               w.vt->wptr_is_expired(&w) ? "yes" : "no");
+        
+        // Upgrade via vtable - returns Option_SharedPtr_i32
+        Option_SharedPtr_i32 upgraded = w.vt->wptr_upgrade(&w);
+        if (upgraded.has_value) {
+            printf("      w.vt->wptr_upgrade(&w) = Some(%d)\n", 
+                   shared_i32_deref(&upgraded.value));
+            shared_i32_release(&upgraded.value);
+        }
+        
+        // Convenience macros
+        printf("   Convenience macros:\n");
+        printf("      WPTR_IS_EXPIRED(w) = %s\n", 
+               WPTR_IS_EXPIRED(w) ? "yes" : "no");
+        
+        // Upgrade via macro - returns Option_SharedPtr_i32
+        Option_SharedPtr_i32 upgraded2 = WPTR_UPGRADE(w);
+        if (upgraded2.has_value) {
+            printf("      WPTR_UPGRADE(w) = Some(%d)\n", 
+                   shared_i32_deref(&upgraded2.value));
+            shared_i32_release(&upgraded2.value);
+        }
+        
+        // Shared vtable verification
+        WeakPtr_i32 w2 = weak_i32_from_shared(&shared);
+        printf("   Shared vtable (memory efficient):\n");
+        printf("      w.vt == w2.vt: %s\n", w.vt == w2.vt ? "yes" : "no");
+        
+        // Release shared pointer to demonstrate expired weak pointer
+        shared_i32_release(&shared);
+        printf("   After releasing shared pointer:\n");
+        printf("      WPTR_IS_EXPIRED(w) = %s\n", 
+               WPTR_IS_EXPIRED(w) ? "yes" : "no");
+        
+        // Upgrade expired weak pointer - returns None
+        Option_SharedPtr_i32 failed = WPTR_UPGRADE(w);
+        printf("      WPTR_UPGRADE(w) = %s\n", 
+               failed.has_value ? "Some" : "None");
+        
+        // Release weak pointers via vtable macro
+        WPTR_RELEASE(w);
+        WPTR_RELEASE(w2);
+    }
+    
     printf("\n=== Done ===\n");
     return 0;
 }

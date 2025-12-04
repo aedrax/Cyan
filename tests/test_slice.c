@@ -176,7 +176,8 @@ static enum theft_trial_res prop_slice_length(struct theft *t, void *arg1) {
     }
     
     if (slice_int_len(s) != len) {
-     
+        return THEFT_TRIAL_FAIL;
+    }
     
     /* Test slice from vector */
     Vec_int v = vec_int_new();

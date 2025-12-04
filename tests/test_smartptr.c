@@ -570,6 +570,223 @@ static enum theft_trial_res prop_shared_vtable_equivalence(struct theft *t, void
 }
 
 /*============================================================================
+ * Property 1: Shared vtable instances (WeakPtr)
+ * For any two WeakPtr_T instances of the same type, their vtable pointers shall
+ * be equal (point to the same address), and the vtable pointer shall be non-null.
+ *============================================================================*/
+
+static enum theft_trial_res prop_weak_shared_vtable(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    SharedPtr_int s1 = shared_int_new(val);
+    SharedPtr_int s2 = shared_int_new(val + 1);
+    
+    WeakPtr_int w1 = weak_int_from_shared(&s1);
+    WeakPtr_int w2 = weak_int_from_shared(&s1);
+    WeakPtr_int w3 = weak_int_from_shared(&s2);
+    
+    /* All vtable pointers should be equal (shared) */
+    if (w1.vt != w2.vt) {
+        weak_int_release(&w1);
+        weak_int_release(&w2);
+        weak_int_release(&w3);
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (w1.vt != w3.vt) {
+        weak_int_release(&w1);
+        weak_int_release(&w2);
+        weak_int_release(&w3);
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* Vtable should not be NULL */
+    if (w1.vt == NULL) {
+        weak_int_release(&w1);
+        weak_int_release(&w2);
+        weak_int_release(&w3);
+        shared_int_release(&s1);
+        shared_int_release(&s2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    weak_int_release(&w1);
+    weak_int_release(&w2);
+    weak_int_release(&w3);
+    shared_int_release(&s1);
+    shared_int_release(&s2);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 2: WeakPtr vtable behavioral equivalence
+ * For any WeakPtr_T instance, calling operations through the vtable
+ * (w.vt->wptr_is_expired, w.vt->wptr_upgrade) shall produce identical results
+ * to calling the standalone functions (weak_T_is_expired, weak_T_upgrade).
+ *============================================================================*/
+
+static enum theft_trial_res prop_weak_vtable_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Test with valid (non-expired) weak pointer */
+    SharedPtr_int s = shared_int_new(val);
+    WeakPtr_int w = weak_int_from_shared(&s);
+    
+    /* is_expired equivalence (valid case) */
+    bool standalone_expired = weak_int_is_expired(&w);
+    bool vtable_expired = w.vt->wptr_is_expired(&w);
+    if (standalone_expired != vtable_expired) {
+        weak_int_release(&w);
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* upgrade equivalence (valid case) */
+    Option_SharedPtr_int standalone_upgrade = weak_int_upgrade(&w);
+    Option_SharedPtr_int vtable_upgrade = w.vt->wptr_upgrade(&w);
+    
+    if (standalone_upgrade.has_value != vtable_upgrade.has_value) {
+        if (standalone_upgrade.has_value) shared_int_release(&standalone_upgrade.value);
+        if (vtable_upgrade.has_value) shared_int_release(&vtable_upgrade.value);
+        weak_int_release(&w);
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (standalone_upgrade.has_value) {
+        /* Both should have same value */
+        if (shared_int_deref(&standalone_upgrade.value) != shared_int_deref(&vtable_upgrade.value)) {
+            shared_int_release(&standalone_upgrade.value);
+            shared_int_release(&vtable_upgrade.value);
+            weak_int_release(&w);
+            shared_int_release(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+        shared_int_release(&standalone_upgrade.value);
+        shared_int_release(&vtable_upgrade.value);
+    }
+    
+    /* Release shared pointer to make weak pointer expired */
+    weak_int_release(&w);
+    shared_int_release(&s);
+    
+    /* Test with expired weak pointer */
+    SharedPtr_int s2 = shared_int_new(val);
+    WeakPtr_int w2 = weak_int_from_shared(&s2);
+    shared_int_release(&s2);  /* Now w2 is expired */
+    
+    /* is_expired equivalence (expired case) */
+    standalone_expired = weak_int_is_expired(&w2);
+    vtable_expired = w2.vt->wptr_is_expired(&w2);
+    if (standalone_expired != vtable_expired) {
+        weak_int_release(&w2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* upgrade equivalence (expired case) */
+    standalone_upgrade = weak_int_upgrade(&w2);
+    vtable_upgrade = w2.vt->wptr_upgrade(&w2);
+    
+    if (standalone_upgrade.has_value != vtable_upgrade.has_value) {
+        if (standalone_upgrade.has_value) shared_int_release(&standalone_upgrade.value);
+        if (vtable_upgrade.has_value) shared_int_release(&vtable_upgrade.value);
+        weak_int_release(&w2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    weak_int_release(&w2);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 3: WeakPtr convenience macro equivalence
+ * For any WeakPtr_T instance, calling convenience macros (WPTR_IS_EXPIRED, WPTR_UPGRADE)
+ * shall produce identical results to calling the vtable function pointers directly.
+ *============================================================================*/
+
+static enum theft_trial_res prop_weak_macro_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr);
+    
+    /* Test with valid (non-expired) weak pointer */
+    SharedPtr_int s = shared_int_new(val);
+    WeakPtr_int w = weak_int_from_shared(&s);
+    
+    /* is_expired equivalence (valid case) */
+    bool vtable_expired = w.vt->wptr_is_expired(&w);
+    bool macro_expired = WPTR_IS_EXPIRED(w);
+    if (vtable_expired != macro_expired) {
+        weak_int_release(&w);
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* upgrade equivalence (valid case) */
+    Option_SharedPtr_int vtable_upgrade = w.vt->wptr_upgrade(&w);
+    Option_SharedPtr_int macro_upgrade = WPTR_UPGRADE(w);
+    
+    if (vtable_upgrade.has_value != macro_upgrade.has_value) {
+        if (vtable_upgrade.has_value) shared_int_release(&vtable_upgrade.value);
+        if (macro_upgrade.has_value) shared_int_release(&macro_upgrade.value);
+        weak_int_release(&w);
+        shared_int_release(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    if (vtable_upgrade.has_value) {
+        /* Both should have same value */
+        if (shared_int_deref(&vtable_upgrade.value) != shared_int_deref(&macro_upgrade.value)) {
+            shared_int_release(&vtable_upgrade.value);
+            shared_int_release(&macro_upgrade.value);
+            weak_int_release(&w);
+            shared_int_release(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+        shared_int_release(&vtable_upgrade.value);
+        shared_int_release(&macro_upgrade.value);
+    }
+    
+    /* Release shared pointer to make weak pointer expired */
+    weak_int_release(&w);
+    shared_int_release(&s);
+    
+    /* Test with expired weak pointer */
+    SharedPtr_int s2 = shared_int_new(val);
+    WeakPtr_int w2 = weak_int_from_shared(&s2);
+    shared_int_release(&s2);  /* Now w2 is expired */
+    
+    /* is_expired equivalence (expired case) */
+    vtable_expired = w2.vt->wptr_is_expired(&w2);
+    macro_expired = WPTR_IS_EXPIRED(w2);
+    if (vtable_expired != macro_expired) {
+        weak_int_release(&w2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    /* upgrade equivalence (expired case) */
+    vtable_upgrade = w2.vt->wptr_upgrade(&w2);
+    macro_upgrade = WPTR_UPGRADE(w2);
+    
+    if (vtable_upgrade.has_value != macro_upgrade.has_value) {
+        if (vtable_upgrade.has_value) shared_int_release(&vtable_upgrade.value);
+        if (macro_upgrade.has_value) shared_int_release(&macro_upgrade.value);
+        weak_int_release(&w2);
+        return THEFT_TRIAL_FAIL;
+    }
+    
+    weak_int_release(&w2);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -655,6 +872,21 @@ static SmartPtrTest smartptr_tests[] = {
     {
         "Property 10 (vtable): SharedPtr vtable behavioral equivalence",
         prop_shared_vtable_equivalence,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 1 (vtable): Shared vtable instances (WeakPtr)",
+        prop_weak_shared_vtable,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 2 (vtable): WeakPtr vtable behavioral equivalence",
+        prop_weak_vtable_equivalence,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 3 (vtable): WeakPtr convenience macro equivalence",
+        prop_weak_macro_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };

@@ -659,7 +659,7 @@ i32 main(void) {
     SharedPtr_i32 owner = shared_i32_new(200);
     WeakPtr_i32 weak = weak_i32_from_shared(&owner);
     
-    // Check if target still exists
+    // Check if target still exists (standalone function)
     if (!weak_i32_is_expired(&weak)) {
         // Upgrade to shared pointer
         Option_SharedPtr_i32 upgraded = weak_i32_upgrade(&weak);
@@ -669,10 +669,28 @@ i32 main(void) {
         }
     }
     
+    // Vtable method calls (equivalent to standalone functions)
+    if (!weak.vt->wptr_is_expired(&weak)) {
+        Option_SharedPtr_i32 upgraded = weak.vt->wptr_upgrade(&weak);
+        if (upgraded.has_value) {
+            printf("Upgraded via vtable: %d\n", shared_i32_deref(&upgraded.value));
+            shared_i32_release(&upgraded.value);
+        }
+    }
+    
+    // Convenience macros (concise vtable access)
+    if (!WPTR_IS_EXPIRED(weak)) {
+        Option_SharedPtr_i32 upgraded = WPTR_UPGRADE(weak);
+        if (upgraded.has_value) {
+            printf("Upgraded via macro: %d\n", shared_i32_deref(&upgraded.value));
+            shared_i32_release(&upgraded.value);
+        }
+    }
+    
     shared_i32_release(&owner);  // Memory freed
     // weak_i32_is_expired(&weak) now returns true
     
-    weak_i32_release(&weak);
+    WPTR_RELEASE(weak);  // Release weak reference (via convenience macro)
     return 0;
 }
 ```
@@ -697,6 +715,12 @@ i32 main(void) {
 | `weak_T_is_expired(w)` | Check if target freed |
 | `weak_T_upgrade(w)` | Upgrade to shared pointer |
 | `weak_T_release(w)` | Release weak reference |
+| `w.vt->wptr_is_expired(&w)` | Check if target freed (vtable) |
+| `w.vt->wptr_upgrade(&w)` | Upgrade to shared pointer (vtable) |
+| `w.vt->wptr_release(&w)` | Release weak reference (vtable) |
+| `WPTR_IS_EXPIRED(w)` | Check if target freed (macro) |
+| `WPTR_UPGRADE(w)` | Upgrade to shared pointer (macro) |
+| `WPTR_RELEASE(w)` | Release weak reference (macro) |
 
 ---
 
@@ -1103,6 +1127,20 @@ SPTR_DEREF(s)              // s.vt->deref(&s)
 SPTR_CLONE(s)              // s.vt->clone(&s)
 SPTR_COUNT(s)              // s.vt->count(&s)
 SPTR_RELEASE(s)            // s.vt->release(&s)
+```
+
+### WeakPtr Vtable
+
+```c
+// Vtable method calls
+w.vt->wptr_is_expired(&w);   // Check if target has been freed
+w.vt->wptr_upgrade(&w);      // Upgrade to SharedPtr (returns Option)
+w.vt->wptr_release(&w);      // Release weak reference
+
+// Convenience macros
+WPTR_IS_EXPIRED(w)         // w.vt->wptr_is_expired(&w)
+WPTR_UPGRADE(w)            // w.vt->wptr_upgrade(&w)
+WPTR_RELEASE(w)            // w.vt->wptr_release(&w)
 ```
 
 ### Channel Vtable

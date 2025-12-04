@@ -183,9 +183,12 @@ typedef struct {
  * Shared Pointer Definition Macro
  *============================================================================*/
 
-/* Forward declare vtable struct */
+/* Forward declare vtable structs */
 #define SHARED_PTR_VT_FORWARD(T) \
     typedef struct SharedPtrVT_##T SharedPtrVT_##T
+
+#define WEAK_PTR_VT_FORWARD(T) \
+    typedef struct WeakPtrVT_##T WeakPtrVT_##T
 
 /**
  * @brief Generate SharedPtr and WeakPtr types for a given base type
@@ -203,6 +206,7 @@ typedef struct {
  */
 #define SHARED_PTR_DEFINE(T) \
     SHARED_PTR_VT_FORWARD(T); \
+    WEAK_PTR_VT_FORWARD(T); \
     typedef struct SharedPtr_##T SharedPtr_##T; \
     typedef struct WeakPtr_##T WeakPtr_##T; \
     \
@@ -215,6 +219,7 @@ typedef struct {
     struct WeakPtr_##T { \
         T *ptr; \
         _SharedCtrlBlock *ctrl; \
+        const WeakPtrVT_##T *vt; \
     }; \
     \
     /* Define Option type for SharedPtr to support weak_upgrade */ \
@@ -246,6 +251,25 @@ typedef struct {
         .sptr_clone = shared_##T##_clone, \
         .sptr_count = shared_##T##_count, \
         .sptr_release = shared_##T##_release \
+    }; \
+    \
+    /* Forward declarations for WeakPtr vtable */ \
+    static inline bool weak_##T##_is_expired(WeakPtr_##T *w); \
+    static inline Option_SharedPtr_##T weak_##T##_upgrade(WeakPtr_##T *w); \
+    static inline void weak_##T##_release(WeakPtr_##T *w); \
+    \
+    /* WeakPtr vtable structure */ \
+    struct WeakPtrVT_##T { \
+        bool (*wptr_is_expired)(WeakPtr_##T *w); \
+        Option_SharedPtr_##T (*wptr_upgrade)(WeakPtr_##T *w); \
+        void (*wptr_release)(WeakPtr_##T *w); \
+    }; \
+    \
+    /* Static const WeakPtr vtable instance */ \
+    static const WeakPtrVT_##T _weak_##T##_vt = { \
+        .wptr_is_expired = weak_##T##_is_expired, \
+        .wptr_upgrade = weak_##T##_upgrade, \
+        .wptr_release = weak_##T##_release \
     }; \
     \
     /** @brief Create a new shared pointer with a value */ \
@@ -318,7 +342,7 @@ typedef struct {
     /** @brief Create a weak pointer from a shared pointer */ \
     static inline WeakPtr_##T weak_##T##_from_shared(SharedPtr_##T *s) { \
         if (s->ctrl) s->ctrl->weak_count++; \
-        return (WeakPtr_##T){ .ptr = s->ptr, .ctrl = s->ctrl }; \
+        return (WeakPtr_##T){ .ptr = s->ptr, .ctrl = s->ctrl, .vt = &_weak_##T##_vt }; \
     } \
     \
     /** @brief Check if the weak pointer's target has been freed */ \
@@ -435,5 +459,20 @@ typedef struct {
  * @brief Release SharedPtr (via vtable)
  */
 #define SPTR_RELEASE(s) ((s).vt->sptr_release(&(s)))
+
+/**
+ * @brief Check if WeakPtr target has been freed (via vtable)
+ */
+#define WPTR_IS_EXPIRED(w) ((w).vt->wptr_is_expired(&(w)))
+
+/**
+ * @brief Upgrade WeakPtr to SharedPtr if still valid (via vtable)
+ */
+#define WPTR_UPGRADE(w) ((w).vt->wptr_upgrade(&(w)))
+
+/**
+ * @brief Release WeakPtr (via vtable)
+ */
+#define WPTR_RELEASE(w) ((w).vt->wptr_release(&(w)))
 
 #endif /* CYAN_SMARTPTR_H */
