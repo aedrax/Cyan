@@ -316,12 +316,12 @@ typedef _Float128 f128;
 
 /**
  * @brief Type-erased pointer type
- * Use as anyopaque* for generic/opaque data pointers
+ * Use as any* for generic/opaque data pointers
  * 
  * Example:
- *   anyopaque* ptr = some_data;
+ *   any* ptr = some_data;
  *   int* typed_ptr = (int*)ptr;
  */
-typedef void anyopaque;
+typedef void any;
 
 #endif /* CYAN_COMMON_H */

@@ -65,7 +65,7 @@ f32 pi_f = 3.14159f;   // float
 f64 pi_d = 3.14159265358979;  // double
 
 // Type-erased pointer
-anyopaque* generic_ptr = &some_data;
+any* generic_ptr = &some_data;
 ```
 
 **Available Types:**
@@ -76,7 +76,7 @@ anyopaque* generic_ptr = &some_data;
 | Unsigned integers | `u8`, `u16`, `u32`, `u64`, `u128`* |
 | Pointer-sized | `isize`, `usize` |
 | Floating-point | `f16`*, `f32`, `f64`, `f80`*, `f128`* |
-| Special | `bool`, `anyopaque` |
+| Special | `bool`, `any` |
 
 *Platform-dependent. Check `CYAN_HAS_INT128`, `CYAN_HAS_FLOAT16`, `CYAN_HAS_FLOAT80`, `CYAN_HAS_FLOAT128` macros.
 

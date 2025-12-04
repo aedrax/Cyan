@@ -82,11 +82,11 @@ int main(void) {
 #endif
     
     // Example 5: Type-erased pointers
-    printf("\n5. Type-Erased Pointers (anyopaque):\n");
+    printf("\n5. Type-Erased Pointers (any):\n");
     i32 int_val = 100;
     f64 float_val = 3.14;
     
-    anyopaque* generic_ptr;
+    any* generic_ptr;
     
     generic_ptr = &int_val;
     printf("   Stored i32: %d\n", *(i32*)generic_ptr);
