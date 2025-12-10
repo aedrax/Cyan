@@ -32,6 +32,7 @@ extern int run_channel_tests(theft_seed seed);
 extern int run_types_tests(theft_seed seed);
 extern int run_vtable_macro_tests(theft_seed seed);
 extern int run_bitint_tests(theft_seed seed);
+extern int run_bitset_tests(theft_seed seed);
 
 /*============================================================================
  * Test Configuration
@@ -262,8 +263,14 @@ static void run_all_tests(void) {
     /* Bitint type tests */
     int bitint_failures = run_bitint_tests(seed);
     g_results.failed += bitint_failures;
-    g_results.passed += (2 - bitint_failures);  /* 2 bitint tests */
-    g_results.total += 2;
+    g_results.passed += (3 - bitint_failures);  /* 3 bitint tests */
+    g_results.total += 3;
+
+    /* Bitset type tests */
+    int bitset_failures = run_bitset_tests(seed);
+    g_results.failed += bitset_failures;
+    g_results.passed += (3 - bitset_failures);  /* 3 bitset tests */
+    g_results.total += 3;
 
     printf("\n");
 }
