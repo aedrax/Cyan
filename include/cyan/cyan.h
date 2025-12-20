@@ -92,6 +92,12 @@
 /** @brief Defined when channels are available */
 #define CYAN_HAS_CHANNEL 1
 
+/** @brief Defined when custom bit-width integers are available */
+#define CYAN_HAS_BITINT 1
+
+/** @brief Defined when bitsets are available */
+#define CYAN_HAS_BITSET 1
+
 /*============================================================================
  * Compiler Feature Detection
  *============================================================================*/
@@ -152,5 +158,9 @@
 /* Concurrency */
 #include "coro.h"
 #include "channel.h"
+
+/* Bit manipulation */
+#include "bitint.h"
+#include "bitset.h"
 
 #endif /* CYAN_H */

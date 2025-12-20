@@ -26,7 +26,8 @@ EXAMPLES = \
 	11_hashmap_dictionary \
 	12_serialize_parsing \
 	13_slice_views \
-	14_string_manipulation
+	14_string_manipulation \
+	16_bitset_integers
 
 # Add build directory prefix to examples
 EXAMPLE_BINS = $(addprefix $(BUILD_DIR)/,$(EXAMPLES))

@@ -21,6 +21,8 @@ A header-only C11 library that brings modern programming paradigms to C, includi
 | **Channels** | CSP-style communication primitives |
 | **Pattern Matching** | Ergonomic Option/Result handling |
 | **Serialization** | Text-based data serialization with S-expression format |
+| **Custom Bit-Width Integers** | Zig-inspired integers with arbitrary bit widths (u6, i12, etc.) |
+| **Bitset** | Fixed-size bit collections for efficient flag management |
 
 ## Quick Start
 
@@ -79,6 +81,223 @@ any* generic_ptr = &some_data;
 | Special | `bool`, `any` |
 
 *Platform-dependent. Check `CYAN_HAS_INT128`, `CYAN_HAS_FLOAT16`, `CYAN_HAS_FLOAT80`, `CYAN_HAS_FLOAT128` macros.
+
+---
+
+## Custom Bit-Width Integers
+
+Zig-inspired integer types with arbitrary bit widths (1-64 bits). Define custom unsigned integers with `UINT_DEFINE(N)` and signed integers with `INT_DEFINE(N)`.
+
+```c
+#include <cyan/bitint.h>
+
+// Define custom bit-width types
+UINT_DEFINE(6);   // u6: 6-bit unsigned (0-63)
+UINT_DEFINE(12);  // u12: 12-bit unsigned (0-4095)
+INT_DEFINE(6);    // i6: 6-bit signed (-32 to 31)
+INT_DEFINE(12);   // i12: 12-bit signed (-2048 to 2047)
+
+i32 main(void) {
+    // Unsigned integers - values are masked to fit
+    u6 val = u6_new(42);           // 42
+    u6 overflow = u6_new(100);     // 36 (100 & 0x3F)
+    printf("Value: %u\n", u6_get(&val));
+    
+    // Arithmetic operations (results masked to N bits)
+    u6 a = u6_new(30);
+    u6 b = u6_new(40);
+    u6 sum = u6_add(a, b);         // 6 (70 wraps at 64)
+    
+    // Bitwise operations
+    u6 masked = u6_and(a, b);
+    u6 shifted = u6_shl(a, 2);
+    
+    // Signed integers with sign extension
+    i6 pos = i6_new(20);
+    i6 neg = i6_new(-15);
+    i6 diff = i6_sub(pos, neg);    // Wraps in 6-bit signed range
+    i6 negated = i6_neg(pos);      // -20
+    
+    // Min/max values
+    u6 max_u6 = u6_max();          // 63
+    i6 min_i6 = i6_min();          // -32
+    
+    return 0;
+}
+```
+
+**Unsigned Integer API (UINT_DEFINE):**
+
+| Function | Description |
+|----------|-------------|
+| `uN_new(value)` | Create N-bit unsigned integer (value masked to N bits) |
+| `uN_get(ptr)` | Get value as backing type |
+| `uN_raw(ptr)` | Get raw backing value |
+| `uN_add(a, b)` | Add two values (result masked) |
+| `uN_sub(a, b)` | Subtract two values (result masked) |
+| `uN_mul(a, b)` | Multiply two values (result masked) |
+| `uN_and(a, b)` | Bitwise AND |
+| `uN_or(a, b)` | Bitwise OR |
+| `uN_xor(a, b)` | Bitwise XOR |
+| `uN_not(a)` | Bitwise NOT (masked to N bits) |
+| `uN_shl(a, shift)` | Left shift (result masked) |
+| `uN_shr(a, shift)` | Right shift |
+| `uN_eq(a, b)` | Equality comparison |
+| `uN_lt(a, b)` | Less than comparison |
+| `uN_le(a, b)` | Less than or equal comparison |
+| `uN_max()` | Maximum value (2^N - 1) |
+| `uN_min()` | Minimum value (0) |
+
+**Signed Integer API (INT_DEFINE):**
+
+| Function | Description |
+|----------|-------------|
+| `iN_new(value)` | Create N-bit signed integer (sign-extended) |
+| `iN_get(ptr)` | Get sign-extended value |
+| `iN_add(a, b)` | Add two values |
+| `iN_sub(a, b)` | Subtract two values |
+| `iN_mul(a, b)` | Multiply two values |
+| `iN_neg(a)` | Negate value |
+| `iN_eq(a, b)` | Equality comparison |
+| `iN_lt(a, b)` | Less than comparison |
+| `iN_le(a, b)` | Less than or equal comparison |
+| `iN_max()` | Maximum value (2^(N-1) - 1) |
+| `iN_min()` | Minimum value (-2^(N-1)) |
+
+**Backing Type Selection:**
+
+| Bit Width | Unsigned Backing | Signed Backing |
+|-----------|------------------|----------------|
+| 1-8       | u8               | i8             |
+| 9-16      | u16              | i16            |
+| 17-32     | u32              | i32            |
+| 33-64     | u64              | i64            |
+
+---
+
+## Bitset
+
+Fixed-size bit collections for efficient flag management. Define bitsets with `BITSET_DEFINE(N)` for N bits (1-64).
+
+```c
+#include <cyan/bitset.h>
+
+BITSET_DEFINE(8);   // Bitset_8: 8-bit bitset
+BITSET_DEFINE(16);  // Bitset_16: 16-bit bitset
+
+i32 main(void) {
+    // Create empty bitset
+    Bitset_8 bs = bitset_8_new();
+    
+    // Set, clear, toggle bits
+    bitset_8_set(&bs, 0);      // Set bit 0
+    bitset_8_set(&bs, 3);      // Set bit 3
+    bitset_8_toggle(&bs, 3);   // Toggle bit 3 (now clear)
+    bitset_8_clear(&bs, 0);    // Clear bit 0
+    
+    // Query bits
+    bool is_set = bitset_8_get(&bs, 0);  // false
+    
+    // Create from raw value
+    Bitset_8 set1 = bitset_8_from_raw(0b00001111);  // Bits 0-3
+    Bitset_8 set2 = bitset_8_from_raw(0b00111100);  // Bits 2-5
+    
+    // Set operations
+    Bitset_8 union_set = bitset_8_union(&set1, &set2);      // OR
+    Bitset_8 intersect = bitset_8_intersect(&set1, &set2);  // AND
+    Bitset_8 diff = bitset_8_diff(&set1, &set2);            // set1 & ~set2
+    Bitset_8 comp = bitset_8_complement(&set1);             // ~set1 (masked)
+    
+    // Utility functions
+    u8 count = bitset_8_count(&bs);     // Number of set bits
+    bool all = bitset_8_all(&bs);       // All bits set?
+    bool any = bitset_8_any(&bs);       // Any bit set?
+    bool none = bitset_8_none(&bs);     // No bits set?
+    bool equal = bitset_8_eq(&set1, &set2);  // Equality check
+    
+    return 0;
+}
+```
+
+**Bitset API:**
+
+| Function | Description |
+|----------|-------------|
+| `bitset_N_new()` | Create bitset with all bits cleared |
+| `bitset_N_from_raw(value)` | Create bitset from raw integer value |
+| `bitset_N_set(bs, index)` | Set bit at index (panics if out of bounds) |
+| `bitset_N_clear(bs, index)` | Clear bit at index |
+| `bitset_N_get(bs, index)` | Get bit at index (returns bool) |
+| `bitset_N_toggle(bs, index)` | Toggle bit at index |
+| `bitset_N_union(a, b)` | Union of two bitsets (OR) |
+| `bitset_N_intersect(a, b)` | Intersection of two bitsets (AND) |
+| `bitset_N_diff(a, b)` | Difference (a AND NOT b) |
+| `bitset_N_complement(bs)` | Complement (NOT, masked to N bits) |
+| `bitset_N_eq(a, b)` | Check equality |
+| `bitset_N_count(bs)` | Count set bits (popcount) |
+| `bitset_N_all(bs)` | Check if all N bits are set |
+| `bitset_N_any(bs)` | Check if any bit is set |
+| `bitset_N_none(bs)` | Check if no bits are set |
+
+**Convenience Macros (vtable-based):**
+
+| Macro | Description |
+|-------|-------------|
+| `BS_SET(bs, i)` | Set bit at index |
+| `BS_CLEAR(bs, i)` | Clear bit at index |
+| `BS_GET(bs, i)` | Get bit at index |
+| `BS_TOGGLE(bs, i)` | Toggle bit at index |
+| `BS_UNION(a, b)` | Union of two bitsets |
+| `BS_INTERSECT(a, b)` | Intersection of two bitsets |
+| `BS_DIFF(a, b)` | Difference of two bitsets |
+| `BS_COMPLEMENT(bs)` | Complement of bitset |
+| `BS_EQ(a, b)` | Check equality |
+| `BS_COUNT(bs)` | Count set bits |
+| `BS_ALL(bs)` | Check if all bits set |
+| `BS_ANY(bs)` | Check if any bit set |
+| `BS_NONE(bs)` | Check if no bits set |
+
+### Named Flags
+
+Define named flags with `FLAGS_DEFINE` for type-safe flag manipulation:
+
+```c
+#include <cyan/bitset.h>
+
+// Define named flags
+FLAGS_DEFINE(Permissions, READ, WRITE, EXECUTE, HIDDEN);
+// Creates: Permissions_READ = 0, Permissions_WRITE = 1, etc.
+// Creates: Permissions_COUNT = 4
+
+BITSET_DEFINE(4);  // Bitset for 4 flags
+
+i32 main(void) {
+    Bitset_4 perms = bitset_4_new();
+    
+    // Set flags using names
+    FLAGS_SET(perms, Permissions_READ);
+    FLAGS_SET(perms, Permissions_WRITE);
+    
+    // Check flags
+    if (FLAGS_HAS(perms, Permissions_READ)) {
+        printf("Has read permission\n");
+    }
+    
+    // Clear flags
+    FLAGS_CLEAR(perms, Permissions_WRITE);
+    
+    return 0;
+}
+```
+
+**Named Flags API:**
+
+| Macro | Description |
+|-------|-------------|
+| `FLAGS_DEFINE(Name, ...)` | Define named flags with sequential bit positions |
+| `FLAGS_SET(bs, flag)` | Set the specified flag |
+| `FLAGS_CLEAR(bs, flag)` | Clear the specified flag |
+| `FLAGS_HAS(bs, flag)` | Check if flag is set |
 
 ---
 
@@ -1476,6 +1695,7 @@ See the `examples/` directory for complete example programs:
 | `07_functional.c` | Functional primitives (map, filter, reduce) |
 | `08_vtable_api.c` | Vtable method-style API and convenience macros |
 | `09_panic_handler.c` | Panic handler behavior and customization |
+| `16_bitset_integers.c` | Bitsets and custom bit-width integers |
 
 Build and run examples:
 ```bash
