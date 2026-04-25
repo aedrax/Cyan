@@ -10,6 +10,17 @@
 #ifndef CYAN_COMMON_H
 #define CYAN_COMMON_H
 
+/*============================================================================
+ * Platform-Specific Feature Test Macros
+ *============================================================================
+ * These must be defined BEFORE any system headers are included.
+ * On macOS, _XOPEN_SOURCE is required to expose ucontext functions
+ * (getcontext, makecontext, swapcontext, setcontext) from <ucontext.h>.
+ */
+#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -201,7 +212,7 @@ typedef __int128 i128;
 #define CYAN_HAS_INT128 1
 #else
 #define CYAN_HAS_INT128 0
-#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#if defined(CYAN_ENABLE_TYPE_WARNINGS)
 #warning "128-bit integer types not available on this platform"
 #endif
 #endif
@@ -267,7 +278,7 @@ typedef _Float16 f16;
 #define CYAN_HAS_FLOAT16 1
 #else
 #define CYAN_HAS_FLOAT16 0
-#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#if defined(CYAN_ENABLE_TYPE_WARNINGS)
 #warning "16-bit float type (_Float16) not available on this platform"
 #endif
 #endif
@@ -291,7 +302,7 @@ typedef long double f80;
 #define CYAN_HAS_FLOAT80 1
 #else
 #define CYAN_HAS_FLOAT80 0
-#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#if defined(CYAN_ENABLE_TYPE_WARNINGS)
 #warning "80-bit float type not available on this platform"
 #endif
 #endif
@@ -305,7 +316,7 @@ typedef _Float128 f128;
 #define CYAN_HAS_FLOAT128 1
 #else
 #define CYAN_HAS_FLOAT128 0
-#if !defined(CYAN_SUPPRESS_TYPE_WARNINGS)
+#if defined(CYAN_ENABLE_TYPE_WARNINGS)
 #warning "128-bit float type (_Float128) not available on this platform"
 #endif
 #endif

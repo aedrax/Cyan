@@ -5,7 +5,7 @@
 #   make clean    - Remove built executables
 #   make run      - Build and run all examples
 
-CC = gcc
+CC ?= gcc
 CFLAGS = -std=c11 -Wall -Wextra -I../include
 LDFLAGS =
 BUILD_DIR = build

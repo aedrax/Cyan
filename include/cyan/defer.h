@@ -58,13 +58,42 @@ static inline void _cyan_defer_cleanup(_CyanDeferCtx *d) {
  *============================================================================
  * These macros provide the user-facing defer functionality.
  * 
- * The defer() macro uses nested functions (a GCC extension) to capture
- * the deferred code block. The __attribute__((cleanup)) makes sure the
- * cleanup function is called when the scope exits.
+ * The defer() macro uses compiler-specific features to capture the
+ * deferred code block:
+ * - GCC: nested functions (a GCC extension)
+ * - Clang: blocks extension (^{ ... })
+ *
+ * The __attribute__((cleanup)) makes sure the cleanup function is called
+ * when the scope exits.
  * 
  * Multiple defers in the same scope execute in LIFO order because
  * cleanup attributes are processed in reverse order of declaration.
  */
+
+#if defined(__clang__)
+/*----------------------------------------------------------------------------
+ * Clang Blocks-Based Defer Implementation
+ *----------------------------------------------------------------------------
+ * Clang does not support GCC nested functions. Instead, we use the Clang
+ * blocks extension (^{ ... }) which provides closure-like anonymous
+ * functions. Blocks are natively available on Apple platforms.
+ */
+
+/**
+ * @brief Block type for Clang defer implementation
+ */
+typedef void (^_CyanDeferBlock)(void);
+
+/**
+ * @brief Cleanup handler that invokes a Clang block
+ * @param block Pointer to the block variable
+ */
+static inline void _cyan_defer_block_cleanup(_CyanDeferBlock *block) {
+    if (*block) {
+        (*block)();
+    }
+}
+#endif /* __clang__ */
 
 /**
  * @brief Defer execution of a code block until scope exit
@@ -78,9 +107,6 @@ static inline void _cyan_defer_cleanup(_CyanDeferCtx *d) {
  * 
  * Multiple defers execute in LIFO order (last declared, first executed).
  * 
- * Note: Variables are captured by value at the point of defer declaration.
- * This is because the nested function captures the current values.
- * 
  * Example:
  * @code
  * void example(void) {
@@ -91,6 +117,8 @@ static inline void _cyan_defer_cleanup(_CyanDeferCtx *d) {
  * }
  * @endcode
  */
+#if defined(__GNUC__) && !defined(__clang__)
+/* GCC path: use nested functions */
 #define defer(code) \
     auto void CYAN_CONCAT(_cyan_defer_fn_, __LINE__)(void *_unused) { \
         (void)_unused; \
@@ -101,6 +129,43 @@ static inline void _cyan_defer_cleanup(_CyanDeferCtx *d) {
         .fn = (_cyan_defer_fn)CYAN_CONCAT(_cyan_defer_fn_, __LINE__), \
         .ctx = NULL \
     }
+#elif defined(__clang__)
+/* Clang path: use blocks extension */
+#define defer(code) \
+    __attribute__((cleanup(_cyan_defer_block_cleanup))) \
+    _CyanDeferBlock CYAN_CONCAT(_cyan_defer_blk_, __LINE__) = ^{ code }
+#else
+#error "defer() requires GCC (nested functions) or Clang (blocks extension)"
+#endif
+
+/*============================================================================
+ * Mutable Variable Helper for Defer
+ *============================================================================
+ * On Clang, blocks capture local variables by value (read-only copy).
+ * To modify an outer variable from inside a defer block on Clang, the
+ * variable must be declared with the __block storage qualifier.
+ * On GCC, nested functions access enclosing scope variables by reference,
+ * so no special qualifier is needed.
+ *
+ * The defer_var macro abstracts this difference:
+ *   defer_var(int, x, 0);   // Declares x, modifiable from defer blocks
+ *   defer({ x = 42; });     // Works on both GCC and Clang
+ */
+
+/**
+ * @brief Declare a variable that can be modified from within a defer block
+ * @param type The variable type
+ * @param name The variable name
+ * @param init The initial value
+ *
+ * On Clang, this expands to __block type name = init.
+ * On GCC, this expands to type name = init.
+ */
+#if defined(__clang__)
+#define defer_var(type, name, init) __block type name = (init)
+#else
+#define defer_var(type, name, init) type name = (init)
+#endif
 
 /*============================================================================
  * Convenience Macros
@@ -181,6 +246,8 @@ static inline void _cyan_defer_capture_int_cleanup(_CyanDeferCaptureInt *d) {
  * }
  * @endcode
  */
+#if defined(__GNUC__) && !defined(__clang__)
+/* GCC path: use nested functions */
 #define defer_capture_int(val, code) \
     auto void CYAN_CONCAT(_cyan_defer_cap_fn_, __LINE__)(void *_cap_ptr) { \
         int _captured_val = *(int *)_cap_ptr; \
@@ -192,5 +259,14 @@ static inline void _cyan_defer_capture_int_cleanup(_CyanDeferCaptureInt *d) {
         .fn = (_cyan_defer_fn)CYAN_CONCAT(_cyan_defer_cap_fn_, __LINE__), \
         .captured_value = (val) \
     }
+#elif defined(__clang__)
+/* Clang path: blocks capture variables by value (copy semantics) */
+#define defer_capture_int(val, code) \
+    __attribute__((cleanup(_cyan_defer_block_cleanup))) \
+    _CyanDeferBlock CYAN_CONCAT(_cyan_defer_cap_blk_, __LINE__) = \
+        ^{ int _captured_val = (val); (void)_captured_val; code }
+#else
+#error "defer_capture_int() requires GCC (nested functions) or Clang (blocks extension)"
+#endif
 
 #endif /* CYAN_DEFER_H */

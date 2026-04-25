@@ -1,10 +1,16 @@
 # Cyan Library Makefile
 # Header-only C11 library with property-based testing
 
-CC = gcc
+CC ?= gcc
 # Use gnu11 to support GCC extensions (nested functions for defer, cleanup attribute)
 CFLAGS = -std=gnu11 -Wall -Wextra -I include -I vendor/theft/inc
 LDFLAGS = -L vendor/theft/build -ltheft -lm
+
+# Platform detection - add macOS-specific flags
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+CFLAGS += -D_XOPEN_SOURCE=700
+endif
 
 # Sanitizer flags (enabled with SANITIZE=1)
 ifdef SANITIZE
@@ -24,8 +30,8 @@ SRC_DIR = tests
 BUILD_DIR = build
 INCLUDE_DIR = include/cyan
 
-# Test sources and objects
-TEST_SRCS = $(wildcard $(SRC_DIR)/*.c)
+# Test sources and objects (exclude standalone test files with their own main())
+TEST_SRCS = $(filter-out $(SRC_DIR)/test_macos_clang_compat.c,$(wildcard $(SRC_DIR)/*.c))
 TEST_OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(TEST_SRCS))
 TEST_BIN = $(BUILD_DIR)/test_runner
 
