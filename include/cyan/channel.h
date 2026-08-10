@@ -174,15 +174,18 @@ typedef enum {
         ch->cond_recv = NULL; \
         ch->vt = &_chan_##T##_vt; \
         \
-        if (capacity > 0) { \
-            ch->buffer = (T *)malloc(capacity * sizeof(T)); \
-            if (!ch->buffer) { \
-                free(ch); \
-                CYAN_PANIC("chan_new: buffer allocation failed"); \
-                return NULL; \
-            } \
-        } else { \
-            ch->buffer = NULL; \
+        if (capacity > SIZE_MAX / sizeof(T)) { \
+            free(ch); \
+            CYAN_PANIC("chan_new: capacity overflow"); \
+            return NULL; \
+        } \
+        /* Unbuffered channels still get a one-element slot, used for the \
+         * sender/receiver rendezvous hand-off */ \
+        ch->buffer = (T *)malloc((capacity > 0 ? capacity : 1) * sizeof(T)); \
+        if (!ch->buffer) { \
+            free(ch); \
+            CYAN_PANIC("chan_new: buffer allocation failed"); \
+            return NULL; \
         } \
         \
         _CYAN_CHANNEL_INIT(ch); \
@@ -272,9 +275,16 @@ typedef enum {
             return None(T); \
         } \
         \
-        T value = ch->buffer[ch->head]; \
-        ch->head = (ch->head + 1) % ch->capacity; \
-        ch->count--; \
+        T value; \
+        if (ch->capacity == 0) { \
+            /* Unbuffered: take the rendezvous slot */ \
+            value = ch->buffer[0]; \
+            ch->count = 0; \
+        } else { \
+            value = ch->buffer[ch->head]; \
+            ch->head = (ch->head + 1) % ch->capacity; \
+            ch->count--; \
+        } \
         \
         _chan_##T##_signal_send(ch); \
         _chan_##T##_unlock(ch); \
@@ -283,32 +293,76 @@ typedef enum {
     } \
     \
     /** \
-     * @brief Send a value to the channel (blocks if full) \
+     * @brief Send a value to the channel \
      * @param ch The channel to send to \
      * @param value The value to send \
-     * @return CHAN_OK on success, CHAN_CLOSED if channel is closed \
+     * @return CHAN_OK on success, CHAN_CLOSED if channel is closed, \
+     *         CHAN_WOULD_BLOCK if the operation cannot complete in \
+     *         non-thread-safe mode (where blocking would hang forever) \
+     * \
+     * In thread-safe mode (CYAN_CHANNEL_THREADSAFE) this blocks while the \
+     * buffer is full; for unbuffered channels it performs a full rendezvous, \
+     * blocking until a receiver has taken the value. \
      */ \
     static inline ChanStatus chan_##T##_send(Channel_##T *ch, T value) { \
         if (!ch) return CHAN_CLOSED; \
         \
         _chan_##T##_lock(ch); \
         \
+        if (ch->closed) { \
+            _chan_##T##_unlock(ch); \
+            return CHAN_CLOSED; \
+        } \
+        \
+        if (!_CYAN_CHANNEL_CAN_BLOCK) { \
+            /* Single-threaded mode: waiting can never be satisfied, so \
+             * return instead of spinning forever on a no-op wait */ \
+            if (ch->capacity == 0 || ch->count >= ch->capacity) { \
+                _chan_##T##_unlock(ch); \
+                return CHAN_WOULD_BLOCK; \
+            } \
+            ch->buffer[ch->tail] = value; \
+            ch->tail = (ch->tail + 1) % ch->capacity; \
+            ch->count++; \
+            _chan_##T##_signal_recv(ch); \
+            _chan_##T##_unlock(ch); \
+            return CHAN_OK; \
+        } \
+        \
+        if (ch->capacity == 0) { \
+            /* Unbuffered: rendezvous. Wait for the slot, deposit the value, \
+             * then wait until a receiver has actually taken it. */ \
+            while (ch->count == 1 && !ch->closed) { \
+                _chan_##T##_wait_send(ch); \
+            } \
+            if (ch->closed) { \
+                _chan_##T##_unlock(ch); \
+                return CHAN_CLOSED; \
+            } \
+            ch->buffer[0] = value; \
+            ch->count = 1; \
+            _chan_##T##_signal_recv(ch); \
+            while (ch->count == 1 && !ch->closed) { \
+                _chan_##T##_wait_send(ch); \
+            } \
+            if (ch->count == 1) { \
+                /* Closed before any receiver took the value */ \
+                ch->count = 0; \
+                _chan_##T##_unlock(ch); \
+                return CHAN_CLOSED; \
+            } \
+            _chan_##T##_unlock(ch); \
+            return CHAN_OK; \
+        } \
+        \
         /* Wait while buffer is full and channel is open */ \
-        while (ch->capacity > 0 && ch->count >= ch->capacity && !ch->closed) { \
+        while (ch->count >= ch->capacity && !ch->closed) { \
             _chan_##T##_wait_send(ch); \
         } \
         \
         if (ch->closed) { \
             _chan_##T##_unlock(ch); \
             return CHAN_CLOSED; \
-        } \
-        \
-        /* For unbuffered channels (capacity == 0), we need special handling */ \
-        if (ch->capacity == 0) { \
-            /* Unbuffered: just mark closed and return error for now */ \
-            /* Full unbuffered semantics would require rendezvous */ \
-            _chan_##T##_unlock(ch); \
-            return CHAN_WOULD_BLOCK; \
         } \
         \
         ch->buffer[ch->tail] = value; \
@@ -322,29 +376,46 @@ typedef enum {
     } \
     \
     /** \
-     * @brief Receive a value from the channel (blocks if empty) \
+     * @brief Receive a value from the channel \
      * @param ch The channel to receive from \
      * @return Option containing the value, or None if closed and empty \
+     *         (or if empty in non-thread-safe mode, where blocking would \
+     *         hang forever) \
      */ \
     static inline Option_##T chan_##T##_recv(Channel_##T *ch) { \
         if (!ch) return None(T); \
         \
         _chan_##T##_lock(ch); \
         \
-        /* Wait while buffer is empty and channel is open */ \
-        while (ch->count == 0 && !ch->closed) { \
-            _chan_##T##_wait_recv(ch); \
+        if (!_CYAN_CHANNEL_CAN_BLOCK) { \
+            /* Single-threaded mode: return instead of spinning forever */ \
+            if (ch->count == 0) { \
+                _chan_##T##_unlock(ch); \
+                return None(T); \
+            } \
+        } else { \
+            /* Wait while buffer is empty and channel is open */ \
+            while (ch->count == 0 && !ch->closed) { \
+                _chan_##T##_wait_recv(ch); \
+            } \
+            \
+            /* If closed and empty, return None */ \
+            if (ch->count == 0 && ch->closed) { \
+                _chan_##T##_unlock(ch); \
+                return None(T); \
+            } \
         } \
         \
-        /* If closed and empty, return None */ \
-        if (ch->count == 0 && ch->closed) { \
-            _chan_##T##_unlock(ch); \
-            return None(T); \
+        T value; \
+        if (ch->capacity == 0) { \
+            /* Unbuffered: take the rendezvous slot and release the sender */ \
+            value = ch->buffer[0]; \
+            ch->count = 0; \
+        } else { \
+            value = ch->buffer[ch->head]; \
+            ch->head = (ch->head + 1) % ch->capacity; \
+            ch->count--; \
         } \
-        \
-        T value = ch->buffer[ch->head]; \
-        ch->head = (ch->head + 1) % ch->capacity; \
-        ch->count--; \
         \
         _chan_##T##_signal_send(ch); \
         _chan_##T##_unlock(ch); \
@@ -372,6 +443,9 @@ typedef enum {
  *============================================================================*/
 
 #ifdef CYAN_CHANNEL_THREADSAFE
+
+/* Blocking waits are real (condition variables), so blocking APIs may wait */
+#define _CYAN_CHANNEL_CAN_BLOCK 1
 
 /* Thread-safe implementation using pthreads */
 #define _CYAN_CHANNEL_INIT(ch) do { \
@@ -423,7 +497,10 @@ typedef enum {
 
 #else
 
-/* Non-thread-safe implementation (no-op for single-threaded use) */
+/* Non-thread-safe implementation (no-op for single-threaded use).
+ * Waits are no-ops, so blocking APIs must return WOULD_BLOCK/None instead
+ * of waiting — a single-threaded wait could never be satisfied. */
+#define _CYAN_CHANNEL_CAN_BLOCK 0
 #define _CYAN_CHANNEL_INIT(ch) ((void)0)
 #define _CYAN_CHANNEL_DESTROY(ch) ((void)0)
 #define _CYAN_CHANNEL_LOCK(ch) ((void)0)
@@ -439,39 +516,74 @@ typedef enum {
  * Vtable Convenience Macros
  *============================================================================*/
 
-/**
- * @brief Send a value to channel (via vtable)
- */
-#define CHAN_SEND(ch, val) ((ch)->vt->chan_send((ch), (val)))
+/* These macros mirror the standalone functions' NULL handling: a NULL
+ * channel yields CHAN_CLOSED / None / true instead of crashing. Each
+ * argument is evaluated exactly once. Note: a None produced from a NULL
+ * channel has no vtable pointer set (use the plain is_some/unwrap macros
+ * on it, not the OPT_* vtable macros). */
+#if defined(__GNUC__) || defined(__clang__)
 
 /**
- * @brief Receive a value from channel (via vtable)
+ * @brief Send a value to channel (via vtable); CHAN_CLOSED if ch is NULL
  */
+#define CHAN_SEND(ch, val) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       _cyan_ch ? _cyan_ch->vt->chan_send(_cyan_ch, (val)) : CHAN_CLOSED; })
+
+/**
+ * @brief Receive a value from channel (via vtable); None if ch is NULL
+ */
+#define CHAN_RECV(ch) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       _cyan_ch ? _cyan_ch->vt->chan_recv(_cyan_ch) \
+                : (__typeof__(_cyan_ch->vt->chan_recv(_cyan_ch))){ .has_value = false }; })
+
+/**
+ * @brief Try to send a value without blocking (via vtable); CHAN_CLOSED if ch is NULL
+ */
+#define CHAN_TRY_SEND(ch, val) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       _cyan_ch ? _cyan_ch->vt->chan_try_send(_cyan_ch, (val)) : CHAN_CLOSED; })
+
+/**
+ * @brief Try to receive a value without blocking (via vtable); None if ch is NULL
+ */
+#define CHAN_TRY_RECV(ch) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       _cyan_ch ? _cyan_ch->vt->chan_try_recv(_cyan_ch) \
+                : (__typeof__(_cyan_ch->vt->chan_try_recv(_cyan_ch))){ .has_value = false }; })
+
+/**
+ * @brief Close the channel (via vtable); no-op if ch is NULL
+ */
+#define CHAN_CLOSE(ch) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       if (_cyan_ch) _cyan_ch->vt->chan_close(_cyan_ch); })
+
+/**
+ * @brief Check if channel is closed (via vtable); true if ch is NULL
+ */
+#define CHAN_IS_CLOSED(ch) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       _cyan_ch ? _cyan_ch->vt->chan_is_closed(_cyan_ch) : true; })
+
+/**
+ * @brief Free the channel (via vtable); no-op if ch is NULL
+ */
+#define CHAN_FREE(ch) \
+    ({ __typeof__(ch) _cyan_ch = (ch); \
+       if (_cyan_ch) _cyan_ch->vt->chan_free(_cyan_ch); })
+
+#else /* Fallbacks: evaluate ch more than once */
+
+#define CHAN_SEND(ch, val) ((ch) ? (ch)->vt->chan_send((ch), (val)) : CHAN_CLOSED)
 #define CHAN_RECV(ch) ((ch)->vt->chan_recv((ch)))
-
-/**
- * @brief Try to send a value without blocking (via vtable)
- */
-#define CHAN_TRY_SEND(ch, val) ((ch)->vt->chan_try_send((ch), (val)))
-
-/**
- * @brief Try to receive a value without blocking (via vtable)
- */
+#define CHAN_TRY_SEND(ch, val) ((ch) ? (ch)->vt->chan_try_send((ch), (val)) : CHAN_CLOSED)
 #define CHAN_TRY_RECV(ch) ((ch)->vt->chan_try_recv((ch)))
+#define CHAN_CLOSE(ch) do { if (ch) (ch)->vt->chan_close((ch)); } while (0)
+#define CHAN_IS_CLOSED(ch) ((ch) ? (ch)->vt->chan_is_closed((ch)) : true)
+#define CHAN_FREE(ch) do { if (ch) (ch)->vt->chan_free((ch)); } while (0)
 
-/**
- * @brief Close the channel (via vtable)
- */
-#define CHAN_CLOSE(ch) ((ch)->vt->chan_close((ch)))
-
-/**
- * @brief Check if channel is closed (via vtable)
- */
-#define CHAN_IS_CLOSED(ch) ((ch)->vt->chan_is_closed((ch)))
-
-/**
- * @brief Free the channel (via vtable)
- */
-#define CHAN_FREE(ch) ((ch)->vt->chan_free((ch)))
+#endif
 
 #endif /* CYAN_CHANNEL_H */

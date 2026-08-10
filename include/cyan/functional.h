@@ -45,11 +45,23 @@
  *   map(arr, 3, out, double_it);
  *   // out = {2, 4, 6}
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define map(arr, len, out, fn) do { \
+    __typeof__(&(arr)[0]) _cyan_map_arr = (arr); \
+    __typeof__(&(out)[0]) _cyan_map_out = (out); \
+    size_t _cyan_map_len = (len); \
+    for (size_t _cyan_map_i = 0; _cyan_map_i < _cyan_map_len; _cyan_map_i++) { \
+        _cyan_map_out[_cyan_map_i] = fn(_cyan_map_arr[_cyan_map_i]); \
+    } \
+} while(0)
+#else
+/* Fallback: evaluates arr, len, and out more than once */
 #define map(arr, len, out, fn) do { \
     for (size_t _cyan_map_i = 0; _cyan_map_i < (len); _cyan_map_i++) { \
         (out)[_cyan_map_i] = fn((arr)[_cyan_map_i]); \
     } \
 } while(0)
+#endif
 
 /*============================================================================
  * Filter - Select elements matching predicate
@@ -75,6 +87,21 @@
  *   filter(arr, 5, out, &out_len, is_even);
  *   // out = {2, 4}, out_len = 2
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define filter(arr, len, out, out_len, pred) do { \
+    __typeof__(&(arr)[0]) _cyan_filter_arr = (arr); \
+    __typeof__(&(out)[0]) _cyan_filter_out = (out); \
+    size_t _cyan_filter_len = (len); \
+    size_t _cyan_filter_j = 0; \
+    for (size_t _cyan_filter_i = 0; _cyan_filter_i < _cyan_filter_len; _cyan_filter_i++) { \
+        if (pred(_cyan_filter_arr[_cyan_filter_i])) { \
+            _cyan_filter_out[_cyan_filter_j++] = _cyan_filter_arr[_cyan_filter_i]; \
+        } \
+    } \
+    *(out_len) = _cyan_filter_j; \
+} while(0)
+#else
+/* Fallback: evaluates arr, len, and out more than once */
 #define filter(arr, len, out, out_len, pred) do { \
     size_t _cyan_filter_j = 0; \
     for (size_t _cyan_filter_i = 0; _cyan_filter_i < (len); _cyan_filter_i++) { \
@@ -84,6 +111,7 @@
     } \
     *(out_len) = _cyan_filter_j; \
 } while(0)
+#endif
 
 /*============================================================================
  * Reduce - Combine elements into single value
@@ -108,12 +136,24 @@
  *   reduce(sum, arr, 5, 0, add);
  *   // sum = 15
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define reduce(result, arr, len, init, acc_fn) do { \
+    __typeof__(&(arr)[0]) _cyan_reduce_arr = (arr); \
+    size_t _cyan_reduce_len = (len); \
+    (result) = (init); \
+    for (size_t _cyan_reduce_i = 0; _cyan_reduce_i < _cyan_reduce_len; _cyan_reduce_i++) { \
+        (result) = acc_fn((result), _cyan_reduce_arr[_cyan_reduce_i]); \
+    } \
+} while(0)
+#else
+/* Fallback: evaluates arr and len more than once */
 #define reduce(result, arr, len, init, acc_fn) do { \
     (result) = (init); \
     for (size_t _cyan_reduce_i = 0; _cyan_reduce_i < (len); _cyan_reduce_i++) { \
         (result) = acc_fn((result), (arr)[_cyan_reduce_i]); \
     } \
 } while(0)
+#endif
 
 /*============================================================================
  * Foreach - Execute side effect on each element
@@ -135,11 +175,22 @@
  *   foreach(arr, 3, print_int);
  *   // prints: 1, 2, 3
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define foreach(arr, len, fn) do { \
+    __typeof__(&(arr)[0]) _cyan_foreach_arr = (arr); \
+    size_t _cyan_foreach_len = (len); \
+    for (size_t _cyan_foreach_i = 0; _cyan_foreach_i < _cyan_foreach_len; _cyan_foreach_i++) { \
+        fn(_cyan_foreach_arr[_cyan_foreach_i]); \
+    } \
+} while(0)
+#else
+/* Fallback: evaluates arr and len more than once */
 #define foreach(arr, len, fn) do { \
     for (size_t _cyan_foreach_i = 0; _cyan_foreach_i < (len); _cyan_foreach_i++) { \
         fn((arr)[_cyan_foreach_i]); \
     } \
 } while(0)
+#endif
 
 /*============================================================================
  * Vector-specific functional operations

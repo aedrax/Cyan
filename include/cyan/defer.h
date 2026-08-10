@@ -173,12 +173,16 @@ static inline void _cyan_defer_block_cleanup(_CyanDeferBlock *block) {
 
 /**
  * @brief Internal cleanup function for defer_free
- * @param p Pointer to the pointer to free
+ * @param p Pointer to the address of the user's pointer variable
+ *
+ * Frees the user's pointer through its address so the user's variable
+ * itself can be set to NULL, not a private copy of it.
  */
-static inline void _cyan_defer_free_impl(void **p) {
-    if (*p) {
-        free(*p);
-        *p = NULL;
+static inline void _cyan_defer_free_impl(void *p) {
+    void **user_ptr = *(void ***)p;
+    if (user_ptr && *user_ptr) {
+        free(*user_ptr);
+        *user_ptr = NULL;
     }
 }
 
@@ -201,7 +205,7 @@ static inline void _cyan_defer_free_impl(void **p) {
  */
 #define defer_free(ptr) \
     __attribute__((cleanup(_cyan_defer_free_impl))) \
-    void *CYAN_CONCAT(_cyan_df_, __LINE__) = (ptr)
+    void **CYAN_CONCAT(_cyan_df_, __LINE__) = (void **)&(ptr)
 
 /*============================================================================
  * Value Capture Defer

@@ -116,6 +116,7 @@ static inline String string_with_capacity(size_t cap) {
     if (cap == 0) {
         return string_new();
     }
+    if (cap == SIZE_MAX) CYAN_PANIC("string capacity overflow");
     size_t actual_cap = cap + 1;  /* +1 for null terminator */
     char *data = (char *)malloc(actual_cap);
     if (!data) CYAN_PANIC("allocation failed");
@@ -133,14 +134,20 @@ static inline String string_with_capacity(size_t cap) {
  * @param additional Number of additional bytes needed
  */
 static inline void _string_check_capacity(String *s, size_t additional) {
+    /* Guard len + additional + 1 against wrapping around SIZE_MAX */
+    if (additional > SIZE_MAX - s->len - 1) CYAN_PANIC("string capacity overflow");
     size_t required = s->len + additional + 1;  /* +1 for null terminator */
     if (required <= s->cap) return;
-    
+
     size_t new_cap = s->cap == 0 ? CYAN_DEFAULT_CAPACITY : s->cap;
     while (new_cap < required) {
+        if (new_cap > SIZE_MAX / CYAN_GROWTH_FACTOR) {
+            new_cap = required;
+            break;
+        }
         new_cap *= CYAN_GROWTH_FACTOR;
     }
-    
+
     char *new_data = (char *)realloc(s->data, new_cap);
     if (!new_data) CYAN_PANIC("allocation failed");
     s->data = new_data;
@@ -165,29 +172,43 @@ static inline void string_push(String *s, char c) {
 /**
  * @brief Append a C string to the string
  * @param s Pointer to the string
- * @param cstr C string to append
+ * @param cstr C string to append (NULL is a no-op)
+ * @note Safe even when cstr points into s's own buffer (e.g. string_cstr(s)):
+ *       the source is re-derived after any reallocation
  */
 static inline void string_append(String *s, const char *cstr) {
     if (!cstr) return;
     size_t add_len = strlen(cstr);
     if (add_len == 0) return;
-    
+
+    /* Detect a source that aliases our own buffer before realloc can move it */
+    bool self_alias = s->data && cstr >= s->data && cstr < s->data + s->cap;
+    size_t src_offset = self_alias ? (size_t)(cstr - s->data) : 0;
+
     _string_check_capacity(s, add_len);
-    memcpy(s->data + s->len, cstr, add_len + 1);  /* Includes null terminator */
+    const char *src = self_alias ? s->data + src_offset : cstr;
+    memmove(s->data + s->len, src, add_len);
     s->len += add_len;
+    s->data[s->len] = '\0';
 }
 
 /**
  * @brief Append another String to this string
  * @param s Pointer to the destination string
- * @param other Pointer to the source string
+ * @param other Pointer to the source string (NULL is a no-op)
+ * @note Safe for self-append (string_append_str(&s, &s))
  */
 static inline void string_append_str(String *s, const String *other) {
     if (!other || other->len == 0) return;
-    
-    _string_check_capacity(s, other->len);
-    memcpy(s->data + s->len, other->data, other->len + 1);
-    s->len += other->len;
+
+    size_t add_len = other->len;
+    _string_check_capacity(s, add_len);
+    /* For self-append, other->data is s->data and already reflects any
+     * reallocation; copy the character range and terminate explicitly so the
+     * source null terminator is never part of an overlapping copy. */
+    memmove(s->data + s->len, other->data, add_len);
+    s->len += add_len;
+    s->data[s->len] = '\0';
 }
 
 /**
@@ -216,22 +237,29 @@ static inline void string_format(String *s, const char *fmt, ...) {
     va_list args, args_copy;
     va_start(args, fmt);
     va_copy(args_copy, args);
-    
+
     /* First, determine required size */
     int needed = vsnprintf(NULL, 0, fmt, args);
     va_end(args);
-    
+
     if (needed < 0) {
         va_end(args_copy);
         return;  /* Format error */
     }
-    
-    _string_check_capacity(s, (size_t)needed);
-    
-    /* Now format into the buffer */
-    vsnprintf(s->data + s->len, (size_t)needed + 1, fmt, args_copy);
+
+    /* Render into a temporary buffer first: format arguments may point into
+     * s->data (e.g. string_format(&s, "%s", string_cstr(&s))), which growing
+     * the buffer would invalidate, and vsnprintf must not read its output
+     * region. */
+    char *tmp = (char *)malloc((size_t)needed + 1);
+    if (!tmp) CYAN_PANIC("allocation failed");
+    vsnprintf(tmp, (size_t)needed + 1, fmt, args_copy);
     va_end(args_copy);
-    
+
+    _string_check_capacity(s, (size_t)needed);
+    memcpy(s->data + s->len, tmp, (size_t)needed + 1);
+    free(tmp);
+
     s->len += (size_t)needed;
 }
 
@@ -338,29 +366,32 @@ static inline Slice_char string_as_slice(const String *s) {
 
 /**
  * @brief Concatenate two strings into a new string
- * @param a Pointer to the first string
- * @param b Pointer to the second string
+ * @param a Pointer to the first string (NULL is treated as an empty string)
+ * @param b Pointer to the second string (NULL is treated as an empty string)
  * @return A new String containing a's content followed by b's content
  */
 static inline String string_concat(const String *a, const String *b) {
-    size_t total_len = a->len + b->len;
-    
+    size_t a_len = a ? a->len : 0;
+    size_t b_len = b ? b->len : 0;
+    if (b_len > SIZE_MAX - a_len) CYAN_PANIC("string capacity overflow");
+    size_t total_len = a_len + b_len;
+
     /* Handle empty result case */
     if (total_len == 0) {
         return string_new();
     }
-    
+
     String result = string_with_capacity(total_len);
-    
-    if (a->data && a->len > 0) {
-        memcpy(result.data, a->data, a->len);
+
+    if (a_len > 0 && a->data) {
+        memcpy(result.data, a->data, a_len);
     }
-    if (b->data && b->len > 0) {
-        memcpy(result.data + a->len, b->data, b->len);
+    if (b_len > 0 && b->data) {
+        memcpy(result.data + a_len, b->data, b_len);
     }
     result.data[total_len] = '\0';
     result.len = total_len;
-    
+
     return result;
 }
 
@@ -418,61 +449,84 @@ static const StringVT _string_vt = {
  * String Convenience Macros
  *============================================================================*/
 
+#if defined(__GNUC__) || defined(__clang__)
+
 /**
  * @brief Push a character to the string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @param c Character to append
  */
-#define STR_PUSH(s, c) ((s).vt->push(&(s), (c)))
+#define STR_PUSH(s, c) \
+    ({ String *_cyan_sp = &(s); _cyan_sp->vt->push(_cyan_sp, (c)); })
 
 /**
  * @brief Append a C string to the string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @param cstr C string to append
  */
-#define STR_APPEND(s, cstr) ((s).vt->append(&(s), (cstr)))
+#define STR_APPEND(s, cstr) \
+    ({ String *_cyan_sp = &(s); _cyan_sp->vt->append(_cyan_sp, (cstr)); })
 
 /**
  * @brief Clear the string content via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  */
-#define STR_CLEAR(s) ((s).vt->clear(&(s)))
+#define STR_CLEAR(s) \
+    ({ String *_cyan_sp = &(s); _cyan_sp->vt->clear(_cyan_sp); })
 
 /**
  * @brief Get character at index via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @param idx Index to access
  * @return Option_char containing the character, or None if out of bounds
  */
-#define STR_GET(s, idx) ((s).vt->get(&(s), (idx)))
+#define STR_GET(s, idx) \
+    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->get(_cyan_sp, (idx)); })
 
 /**
  * @brief Get the length of the string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @return Number of characters (excluding null terminator)
  */
-#define STR_LEN(s) ((s).vt->len(&(s)))
+#define STR_LEN(s) \
+    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->len(_cyan_sp); })
 
 /**
  * @brief Get the null-terminated C string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @return Pointer to null-terminated character array
  */
-#define STR_CSTR(s) ((s).vt->cstr(&(s)))
+#define STR_CSTR(s) \
+    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->cstr(_cyan_sp); })
 
 /**
  * @brief Create a slice view of a portion of the string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  * @param start Start index (inclusive)
  * @param end End index (exclusive)
  * @return Slice_char viewing the specified range
  */
-#define STR_SLICE(s, start, end) ((s).vt->slice(&(s), (start), (end)))
+#define STR_SLICE(s, start, end) \
+    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->slice(_cyan_sp, (start), (end)); })
 
 /**
  * @brief Free all memory associated with the string via vtable
- * @param s The string (not a pointer)
+ * @param s The string (an lvalue, not a pointer)
  */
+#define STR_FREE(s) \
+    ({ String *_cyan_sp = &(s); _cyan_sp->vt->free(_cyan_sp); })
+
+#else /* Fallbacks: evaluate s more than once */
+
+#define STR_PUSH(s, c) ((s).vt->push(&(s), (c)))
+#define STR_APPEND(s, cstr) ((s).vt->append(&(s), (cstr)))
+#define STR_CLEAR(s) ((s).vt->clear(&(s)))
+#define STR_GET(s, idx) ((s).vt->get(&(s), (idx)))
+#define STR_LEN(s) ((s).vt->len(&(s)))
+#define STR_CSTR(s) ((s).vt->cstr(&(s)))
+#define STR_SLICE(s, start, end) ((s).vt->slice(&(s), (start), (end)))
 #define STR_FREE(s) ((s).vt->free(&(s)))
+
+#endif
 
 #endif /* CYAN_STRING_H */

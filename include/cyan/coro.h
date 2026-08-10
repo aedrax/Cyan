@@ -82,6 +82,8 @@ struct Coro {
     CoroFn fn;               /**< Coroutine function */
     void *arg;               /**< User argument */
     char yield_buffer[64];   /**< Internal buffer for small yield values */
+    void *yield_heap;        /**< Heap storage for yield values > 64 bytes */
+    size_t yield_heap_cap;   /**< Capacity of yield_heap */
 };
 
 /*============================================================================
@@ -116,8 +118,18 @@ static inline void _coro_yield_impl(Coro *c, const void *value, size_t size) {
             memcpy(c->yield_buffer, value, size);
             c->yield_value = c->yield_buffer;
         } else {
-            /* For large values, just store the pointer (caller must verify lifetime) */
-            c->yield_value = (void *)value;
+            /* Large values must be copied: the source is typically a
+             * temporary on the coroutine's stack that dies as soon as the
+             * yield macro's block exits. Copy into heap storage owned by
+             * the Coro so the value stays valid until the next yield. */
+            if (size > c->yield_heap_cap) {
+                void *new_heap = realloc(c->yield_heap, size);
+                if (!new_heap) CYAN_PANIC("coro yield: allocation failed");
+                c->yield_heap = new_heap;
+                c->yield_heap_cap = size;
+            }
+            memcpy(c->yield_heap, value, size);
+            c->yield_value = c->yield_heap;
         }
         c->yield_size = size;
     } else {
@@ -177,6 +189,8 @@ static inline Coro *coro_new(CoroFn fn, void *arg, size_t stack_size) {
     c->arg = arg;
     c->yield_value = NULL;
     c->yield_size = 0;
+    c->yield_heap = NULL;
+    c->yield_heap_cap = 0;
     
     /* Initialize coroutine context */
     if (getcontext(&c->coro_ctx) == -1) {
@@ -276,18 +290,35 @@ static inline bool coro_resume(Coro *c) {
 } while(0)
 
 /**
+ * @brief Check whether the coroutine yielded a value
+ * @param c The coroutine
+ * @return true if a value is available for coro_get_yield
+ *
+ * A coroutine that suspended via coro_yield() (no value) has no yielded
+ * value; calling coro_get_yield in that state panics.
+ */
+#define coro_has_yield(c) ((c)->yield_value != NULL)
+
+/**
  * @brief Get the value yielded by a coroutine
  * @param c The coroutine
  * @param T The type of the yielded value
  * @return The yielded value
- * 
+ * @note Panics if the coroutine yielded without a value (coro_yield());
+ *       use coro_has_yield(c) to check first
+ *
  * Example:
  * @code
  * coro_resume(c);
- * int val = coro_get_yield(c, int);
+ * if (coro_has_yield(c)) {
+ *     int val = coro_get_yield(c, int);
+ * }
  * @endcode
  */
-#define coro_get_yield(c, T) (*((T *)((c)->yield_value)))
+#define coro_get_yield(c, T) \
+    (*((T *)((c)->yield_value \
+        ? (c)->yield_value \
+        : CYAN_PANIC_EXPR("coro_get_yield: no value was yielded", (void *)0))))
 
 /**
  * @brief Check if a coroutine has finished
@@ -329,6 +360,7 @@ static inline void coro_free(Coro *c) {
         if (c->stack) {
             free(c->stack);
         }
+        free(c->yield_heap);
         free(c);
     }
 }

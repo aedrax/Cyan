@@ -256,12 +256,14 @@ typedef struct {
     /* Forward declarations for WeakPtr vtable */ \
     static inline bool weak_##T##_is_expired(WeakPtr_##T *w); \
     static inline Option_SharedPtr_##T weak_##T##_upgrade(WeakPtr_##T *w); \
+    static inline WeakPtr_##T weak_##T##_clone(WeakPtr_##T *w); \
     static inline void weak_##T##_release(WeakPtr_##T *w); \
     \
     /* WeakPtr vtable structure */ \
     struct WeakPtrVT_##T { \
         bool (*wptr_is_expired)(WeakPtr_##T *w); \
         Option_SharedPtr_##T (*wptr_upgrade)(WeakPtr_##T *w); \
+        WeakPtr_##T (*wptr_clone)(WeakPtr_##T *w); \
         void (*wptr_release)(WeakPtr_##T *w); \
     }; \
     \
@@ -269,6 +271,7 @@ typedef struct {
     static const WeakPtrVT_##T _weak_##T##_vt = { \
         .wptr_is_expired = weak_##T##_is_expired, \
         .wptr_upgrade = weak_##T##_upgrade, \
+        .wptr_clone = weak_##T##_clone, \
         .wptr_release = weak_##T##_release \
     }; \
     \
@@ -322,19 +325,23 @@ typedef struct {
         return s->ctrl ? s->ctrl->strong_count : 0; \
     } \
     \
-    /** @brief Release a shared pointer (decrement reference count) */ \
+    /** @brief Release a shared pointer (decrement reference count) \
+     *  @note Safe against re-entrant release: the instance is detached before \
+     *        the destructor runs, so a destructor that releases the same \
+     *        SharedPtr again is a harmless no-op */ \
     static inline void shared_##T##_release(SharedPtr_##T *s) { \
-        if (!s->ctrl) return; \
-        if (--s->ctrl->strong_count == 0) { \
-            if (s->ctrl->dtor) s->ctrl->dtor(s->ptr); \
-            free(s->ptr); \
-            s->ptr = NULL; \
-            if (--s->ctrl->weak_count == 0) { \
-                free(s->ctrl); \
-            } \
-        } \
+        _SharedCtrlBlock *ctrl = s->ctrl; \
+        T *ptr = s->ptr; \
         s->ctrl = NULL; \
         s->ptr = NULL; \
+        if (!ctrl) return; \
+        if (--ctrl->strong_count == 0) { \
+            if (ctrl->dtor) ctrl->dtor(ptr); \
+            free(ptr); \
+            if (--ctrl->weak_count == 0) { \
+                free(ctrl); \
+            } \
+        } \
     } \
     \
     /* ============== Weak Pointer Functions ============== */ \
@@ -348,6 +355,13 @@ typedef struct {
     /** @brief Check if the weak pointer's target has been freed */ \
     static inline bool weak_##T##_is_expired(WeakPtr_##T *w) { \
         return !w->ctrl || w->ctrl->strong_count == 0; \
+    } \
+    \
+    /** @brief Clone a weak pointer (increments the weak reference count, \
+     *  unlike a shallow struct copy which would corrupt the count) */ \
+    static inline WeakPtr_##T weak_##T##_clone(WeakPtr_##T *w) { \
+        if (w->ctrl) w->ctrl->weak_count++; \
+        return (WeakPtr_##T){ .ptr = w->ptr, .ctrl = w->ctrl, .vt = &_weak_##T##_vt }; \
     } \
     \
     /** @brief Upgrade a weak pointer to a shared pointer if still valid */ \
@@ -415,64 +429,102 @@ typedef struct {
  * Vtable Convenience Macros
  *============================================================================*/
 
+#if defined(__GNUC__) || defined(__clang__)
+
 /**
  * @brief Get raw pointer from UniquePtr (via vtable)
  */
-#define UPTR_GET(u) ((u).vt->uptr_get(&(u)))
+#define UPTR_GET(u) \
+    ({ __typeof__(u) *_cyan_up = &(u); _cyan_up->vt->uptr_get(_cyan_up); })
 
 /**
  * @brief Dereference UniquePtr (via vtable)
  */
-#define UPTR_DEREF(u) ((u).vt->uptr_deref(&(u)))
+#define UPTR_DEREF(u) \
+    ({ __typeof__(u) *_cyan_up = &(u); _cyan_up->vt->uptr_deref(_cyan_up); })
 
 /**
  * @brief Move ownership from UniquePtr (via vtable)
  */
-#define UPTR_MOVE(u) ((u).vt->uptr_move(&(u)))
+#define UPTR_MOVE(u) \
+    ({ __typeof__(u) *_cyan_up = &(u); _cyan_up->vt->uptr_move(_cyan_up); })
 
 /**
  * @brief Free UniquePtr (via vtable)
  */
-#define UPTR_FREE(u) ((u).vt->uptr_free(&(u)))
+#define UPTR_FREE(u) \
+    ({ __typeof__(u) *_cyan_up = &(u); _cyan_up->vt->uptr_free(_cyan_up); })
 
 /**
  * @brief Get raw pointer from SharedPtr (via vtable)
  */
-#define SPTR_GET(s) ((s).vt->sptr_get(&(s)))
+#define SPTR_GET(s) \
+    ({ __typeof__(s) *_cyan_sp = &(s); _cyan_sp->vt->sptr_get(_cyan_sp); })
 
 /**
  * @brief Dereference SharedPtr (via vtable)
  */
-#define SPTR_DEREF(s) ((s).vt->sptr_deref(&(s)))
+#define SPTR_DEREF(s) \
+    ({ __typeof__(s) *_cyan_sp = &(s); _cyan_sp->vt->sptr_deref(_cyan_sp); })
 
 /**
  * @brief Clone SharedPtr (via vtable)
  */
-#define SPTR_CLONE(s) ((s).vt->sptr_clone(&(s)))
+#define SPTR_CLONE(s) \
+    ({ __typeof__(s) *_cyan_sp = &(s); _cyan_sp->vt->sptr_clone(_cyan_sp); })
 
 /**
  * @brief Get reference count from SharedPtr (via vtable)
  */
-#define SPTR_COUNT(s) ((s).vt->sptr_count(&(s)))
+#define SPTR_COUNT(s) \
+    ({ __typeof__(s) *_cyan_sp = &(s); _cyan_sp->vt->sptr_count(_cyan_sp); })
 
 /**
  * @brief Release SharedPtr (via vtable)
  */
-#define SPTR_RELEASE(s) ((s).vt->sptr_release(&(s)))
+#define SPTR_RELEASE(s) \
+    ({ __typeof__(s) *_cyan_sp = &(s); _cyan_sp->vt->sptr_release(_cyan_sp); })
 
 /**
  * @brief Check if WeakPtr target has been freed (via vtable)
  */
-#define WPTR_IS_EXPIRED(w) ((w).vt->wptr_is_expired(&(w)))
+#define WPTR_IS_EXPIRED(w) \
+    ({ __typeof__(w) *_cyan_wp = &(w); _cyan_wp->vt->wptr_is_expired(_cyan_wp); })
 
 /**
  * @brief Upgrade WeakPtr to SharedPtr if still valid (via vtable)
  */
-#define WPTR_UPGRADE(w) ((w).vt->wptr_upgrade(&(w)))
+#define WPTR_UPGRADE(w) \
+    ({ __typeof__(w) *_cyan_wp = &(w); _cyan_wp->vt->wptr_upgrade(_cyan_wp); })
+
+/**
+ * @brief Clone WeakPtr (via vtable)
+ */
+#define WPTR_CLONE(w) \
+    ({ __typeof__(w) *_cyan_wp = &(w); _cyan_wp->vt->wptr_clone(_cyan_wp); })
 
 /**
  * @brief Release WeakPtr (via vtable)
  */
+#define WPTR_RELEASE(w) \
+    ({ __typeof__(w) *_cyan_wp = &(w); _cyan_wp->vt->wptr_release(_cyan_wp); })
+
+#else /* Fallbacks: evaluate their smart-pointer argument more than once */
+
+#define UPTR_GET(u) ((u).vt->uptr_get(&(u)))
+#define UPTR_DEREF(u) ((u).vt->uptr_deref(&(u)))
+#define UPTR_MOVE(u) ((u).vt->uptr_move(&(u)))
+#define UPTR_FREE(u) ((u).vt->uptr_free(&(u)))
+#define SPTR_GET(s) ((s).vt->sptr_get(&(s)))
+#define SPTR_DEREF(s) ((s).vt->sptr_deref(&(s)))
+#define SPTR_CLONE(s) ((s).vt->sptr_clone(&(s)))
+#define SPTR_COUNT(s) ((s).vt->sptr_count(&(s)))
+#define SPTR_RELEASE(s) ((s).vt->sptr_release(&(s)))
+#define WPTR_IS_EXPIRED(w) ((w).vt->wptr_is_expired(&(w)))
+#define WPTR_UPGRADE(w) ((w).vt->wptr_upgrade(&(w)))
+#define WPTR_CLONE(w) ((w).vt->wptr_clone(&(w)))
 #define WPTR_RELEASE(w) ((w).vt->wptr_release(&(w)))
+
+#endif
 
 #endif /* CYAN_SMARTPTR_H */

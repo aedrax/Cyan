@@ -145,20 +145,35 @@
  * Example:
  *   int val = unwrap(maybe);  // Panics if maybe is None
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define unwrap(opt) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? _cyan_opt.value \
+                           : CYAN_PANIC_EXPR("unwrap called on None", _cyan_opt.value); })
+#else
+/* Fallback: evaluates opt more than once */
 #define unwrap(opt) \
     (is_some(opt) ? (opt).value : CYAN_PANIC_EXPR("unwrap called on None", (opt).value))
+#endif
 
 /**
  * @brief Extract the value from an Option, or return a default
  * @param opt The Option to unwrap
  * @param default_val The default value if Option is empty
  * @return The contained value if present, otherwise default_val
- * 
+ *
  * Example:
  *   int val = unwrap_or(maybe, 0);  // Returns 0 if maybe is None
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define unwrap_or(opt, default_val) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? _cyan_opt.value : (default_val); })
+#else
+/* Fallback: evaluates opt more than once */
 #define unwrap_or(opt, default_val) \
     (is_some(opt) ? (opt).value : (default_val))
+#endif
 
 /*============================================================================
  * Transformations
@@ -170,13 +185,20 @@
  * @param T_out The output type
  * @param fn The transformation function
  * @return Option_T_out containing transformed value, or None if input was None
- * 
+ *
  * Example:
  *   Option_int x = Some(int, 5);
  *   Option_double y = map_option(x, double, int_to_double);
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define map_option(opt, T_out, fn) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? Some(T_out, fn(_cyan_opt.value)) : None(T_out); })
+#else
+/* Fallback: evaluates opt more than once */
 #define map_option(opt, T_out, fn) \
     (is_some(opt) ? Some(T_out, fn((opt).value)) : None(T_out))
+#endif
 
 /*============================================================================
  * Vtable Convenience Macros
@@ -184,32 +206,57 @@
 
 /**
  * @brief Check if an Option contains a value (via vtable)
- * @param opt The Option to check
+ * @param opt The Option to check (must be an lvalue)
  * @return true if the Option contains a value, false otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_IS_SOME(opt) \
+    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_is_some(_cyan_optp); })
+#else
+/* Fallback: evaluates opt more than once */
 #define OPT_IS_SOME(opt) ((opt).vt->opt_is_some(&(opt)))
+#endif
 
 /**
  * @brief Check if an Option is empty (via vtable)
- * @param opt The Option to check
+ * @param opt The Option to check (must be an lvalue)
  * @return true if the Option is empty, false otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_IS_NONE(opt) \
+    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_is_none(_cyan_optp); })
+#else
+/* Fallback: evaluates opt more than once */
 #define OPT_IS_NONE(opt) ((opt).vt->opt_is_none(&(opt)))
+#endif
 
 /**
  * @brief Extract the value from an Option (via vtable), panicking if empty
- * @param opt The Option to unwrap
+ * @param opt The Option to unwrap (must be an lvalue)
  * @return The contained value
  * @note Panics if the Option is None
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_UNWRAP(opt) \
+    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_unwrap(_cyan_optp); })
+#else
+/* Fallback: evaluates opt more than once */
 #define OPT_UNWRAP(opt) ((opt).vt->opt_unwrap(&(opt)))
+#endif
 
 /**
  * @brief Extract the value from an Option (via vtable), or return a default
- * @param opt The Option to unwrap
+ * @param opt The Option to unwrap (must be an lvalue)
  * @param default_val The default value if Option is empty
  * @return The contained value if present, otherwise default_val
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_UNWRAP_OR(opt, default_val) \
+    ({ __typeof__(opt) *_cyan_optp = &(opt); \
+       _cyan_optp->vt->opt_unwrap_or(_cyan_optp, (default_val)); })
+#else
+/* Fallback: evaluates opt more than once */
 #define OPT_UNWRAP_OR(opt, default_val) ((opt).vt->opt_unwrap_or(&(opt), (default_val)))
+#endif
 
 #endif /* CYAN_OPTION_H */

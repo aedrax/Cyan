@@ -1622,8 +1622,9 @@ Configure the library by defining macros before including headers:
 // Enable thread-safe channels
 #define CYAN_CHANNEL_THREADSAFE
 
-// Suppress warnings for unavailable platform-specific types
-#define CYAN_SUPPRESS_TYPE_WARNINGS
+// Opt in to #warning diagnostics when platform-specific types
+// (i128, f16, f80, f128) are unavailable (silent by default)
+#define CYAN_ENABLE_TYPE_WARNINGS
 
 #include <cyan/cyan.h>
 ```

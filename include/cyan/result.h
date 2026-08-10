@@ -162,8 +162,16 @@
  * Example:
  *   int val = unwrap_ok(result);  // Panics if result is Err
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define unwrap_ok(res) \
+    ({ __typeof__(res) _cyan_res = (res); \
+       _cyan_res.is_ok_flag ? _cyan_res.ok_value \
+                            : CYAN_PANIC_EXPR("unwrap_ok called on Err", _cyan_res.ok_value); })
+#else
+/* Fallback: evaluates res more than once */
 #define unwrap_ok(res) \
     (is_ok(res) ? (res).ok_value : CYAN_PANIC_EXPR("unwrap_ok called on Err", (res).ok_value))
+#endif
 
 /**
  * @brief Extract the error value from a Result, panicking if success
@@ -174,8 +182,16 @@
  * Example:
  *   const char *err = unwrap_err(result);  // Panics if result is Ok
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define unwrap_err(res) \
+    ({ __typeof__(res) _cyan_res = (res); \
+       !_cyan_res.is_ok_flag ? _cyan_res.err_value \
+                             : CYAN_PANIC_EXPR("unwrap_err called on Ok", _cyan_res.err_value); })
+#else
+/* Fallback: evaluates res more than once */
 #define unwrap_err(res) \
     (is_err(res) ? (res).err_value : CYAN_PANIC_EXPR("unwrap_err called on Ok", (res).err_value))
+#endif
 
 /**
  * @brief Extract the success value from a Result, or return a default
@@ -186,8 +202,15 @@
  * Example:
  *   int val = unwrap_ok_or(result, 0);  // Returns 0 if result is Err
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define unwrap_ok_or(res, default_val) \
+    ({ __typeof__(res) _cyan_res = (res); \
+       _cyan_res.is_ok_flag ? _cyan_res.ok_value : (default_val); })
+#else
+/* Fallback: evaluates res more than once */
 #define unwrap_ok_or(res, default_val) \
     (is_ok(res) ? (res).ok_value : (default_val))
+#endif
 
 /*============================================================================
  * Transformations
@@ -205,8 +228,16 @@
  *   Result_int_const_charp x = Ok(int, const_charp, 5);
  *   Result_double_const_charp y = map_result(x, double, const_charp, int_to_double);
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define map_result(res, T_out, E, fn) \
+    ({ __typeof__(res) _cyan_res = (res); \
+       _cyan_res.is_ok_flag ? Ok(T_out, E, fn(_cyan_res.ok_value)) \
+                            : Err(T_out, E, _cyan_res.err_value); })
+#else
+/* Fallback: evaluates res more than once */
 #define map_result(res, T_out, E, fn) \
     (is_ok(res) ? Ok(T_out, E, fn((res).ok_value)) : Err(T_out, E, (res).err_value))
+#endif
 
 /**
  * @brief Transform the error value inside a Result
@@ -220,8 +251,16 @@
  *   Result_int_const_charp x = Err(int, const_charp, "error");
  *   Result_int_int y = map_err(x, int, int, error_to_code);
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define map_err(res, T, E_out, fn) \
+    ({ __typeof__(res) _cyan_res = (res); \
+       _cyan_res.is_ok_flag ? Ok(T, E_out, _cyan_res.ok_value) \
+                            : Err(T, E_out, fn(_cyan_res.err_value)); })
+#else
+/* Fallback: evaluates res more than once */
 #define map_err(res, T, E_out, fn) \
     (is_ok(res) ? Ok(T, E_out, (res).ok_value) : Err(T, E_out, fn((res).err_value)))
+#endif
 
 /*============================================================================
  * Vtable Convenience Macros
@@ -232,14 +271,26 @@
  * @param res The Result to check
  * @return true if the Result is Ok, false otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define RES_IS_OK(res) \
+    ({ __typeof__(res) *_cyan_resp = &(res); _cyan_resp->vt->res_is_ok(_cyan_resp); })
+#else
+/* Fallback: evaluates res more than once */
 #define RES_IS_OK(res) ((res).vt->res_is_ok(&(res)))
+#endif
 
 /**
  * @brief Check if a Result is error (via vtable)
  * @param res The Result to check
  * @return true if the Result is Err, false otherwise
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define RES_IS_ERR(res) \
+    ({ __typeof__(res) *_cyan_resp = &(res); _cyan_resp->vt->res_is_err(_cyan_resp); })
+#else
+/* Fallback: evaluates res more than once */
 #define RES_IS_ERR(res) ((res).vt->res_is_err(&(res)))
+#endif
 
 /**
  * @brief Extract the success value from a Result (via vtable), panicking if error
@@ -247,7 +298,13 @@
  * @return The contained success value
  * @note Panics if the Result is Err
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define RES_UNWRAP_OK(res) \
+    ({ __typeof__(res) *_cyan_resp = &(res); _cyan_resp->vt->res_unwrap_ok(_cyan_resp); })
+#else
+/* Fallback: evaluates res more than once */
 #define RES_UNWRAP_OK(res) ((res).vt->res_unwrap_ok(&(res)))
+#endif
 
 /**
  * @brief Extract the error value from a Result (via vtable), panicking if success
@@ -255,7 +312,13 @@
  * @return The contained error value
  * @note Panics if the Result is Ok
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define RES_UNWRAP_ERR(res) \
+    ({ __typeof__(res) *_cyan_resp = &(res); _cyan_resp->vt->res_unwrap_err(_cyan_resp); })
+#else
+/* Fallback: evaluates res more than once */
 #define RES_UNWRAP_ERR(res) ((res).vt->res_unwrap_err(&(res)))
+#endif
 
 /**
  * @brief Extract the success value from a Result (via vtable), or return a default
@@ -263,6 +326,13 @@
  * @param default_val The default value if Result is Err
  * @return The contained success value if Ok, otherwise default_val
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define RES_UNWRAP_OK_OR(res, default_val) \
+    ({ __typeof__(res) *_cyan_resp = &(res); \
+       _cyan_resp->vt->res_unwrap_ok_or(_cyan_resp, (default_val)); })
+#else
+/* Fallback: evaluates res more than once */
 #define RES_UNWRAP_OK_OR(res, default_val) ((res).vt->res_unwrap_ok_or(&(res), (default_val)))
+#endif
 
 #endif /* CYAN_RESULT_H */

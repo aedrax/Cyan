@@ -120,7 +120,9 @@
         if (start > s.len) start = s.len; \
         if (end > s.len) end = s.len; \
         if (start > end) start = end; \
-        return (Slice_##T){ .data = s.data + start, .len = end - start, .vt = &_slice_##T##_vt }; \
+        /* Avoid NULL + start, which is undefined behavior (C11 6.5.6p8) */ \
+        const T *new_data = s.data ? s.data + start : NULL; \
+        return (Slice_##T){ .data = new_data, .len = end - start, .vt = &_slice_##T##_vt }; \
     } \
     \
     /** \
@@ -147,13 +149,16 @@
  * Slice Convenience Macros
  *============================================================================*/
 
+#if defined(__GNUC__) || defined(__clang__)
+
 /**
  * @brief Get element at index via vtable
  * @param s The slice (not a pointer)
  * @param idx Index to access
  * @return Option containing the element, or None if out of bounds
  */
-#define SLICE_GET(s, idx) ((s).vt->get((s), (idx)))
+#define SLICE_GET(s, idx) \
+    ({ __typeof__(s) _cyan_sl = (s); _cyan_sl.vt->get(_cyan_sl, (idx)); })
 
 /**
  * @brief Create a subslice view via vtable
@@ -162,13 +167,23 @@
  * @param end End index (exclusive)
  * @return A new Slice viewing the specified range
  */
-#define SLICE_SUBSLICE(s, start, end) ((s).vt->subslice((s), (start), (end)))
+#define SLICE_SUBSLICE(s, start, end) \
+    ({ __typeof__(s) _cyan_sl = (s); _cyan_sl.vt->subslice(_cyan_sl, (start), (end)); })
 
 /**
  * @brief Get the length of the slice via vtable
  * @param s The slice (not a pointer)
  * @return Number of elements in the slice
  */
+#define SLICE_LEN(s) \
+    ({ __typeof__(s) _cyan_sl = (s); _cyan_sl.vt->len(_cyan_sl); })
+
+#else /* Fallbacks: evaluate s more than once */
+
+#define SLICE_GET(s, idx) ((s).vt->get((s), (idx)))
+#define SLICE_SUBSLICE(s, start, end) ((s).vt->subslice((s), (start), (end)))
 #define SLICE_LEN(s) ((s).vt->len((s)))
+
+#endif
 
 #endif /* CYAN_SLICE_H */

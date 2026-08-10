@@ -170,9 +170,17 @@ static enum theft_trial_res prop_defer_nested_order(struct theft *t, void *arg1)
 }
 
 /*============================================================================
- * Property 23: Defer captures values at declaration time
- * For any defer statement referencing a variable, the deferred code SHALL use
- * the variable's value at the point of defer declaration, not at execution time.
+ * Property 23: defer_capture_int captures values at declaration time
+ * For any defer_capture_int statement, the deferred code SHALL use the value
+ * captured at the point of declaration, not at execution time.
+ *
+ * Note: this guarantee applies only to defer_capture_int(). Plain defer()
+ * has compiler-specific capture semantics:
+ *   - GCC (nested functions): captures by reference — deferred code sees the
+ *     variable's value at scope exit
+ *   - Clang (blocks): captures by value at declaration time
+ * For portable value capture, use defer_capture_int() or avoid reassigning
+ * captured variables after the defer statement.
  *============================================================================*/
 
 static int g_captured_value = 0;
@@ -203,6 +211,32 @@ static enum theft_trial_res prop_defer_value_capture(struct theft *t, void *arg1
 }
 
 /*============================================================================
+ * Property 24: defer_free frees and NULLs the user's pointer
+ * After the scope containing defer_free(ptr) exits, ptr SHALL be NULL.
+ *============================================================================*/
+
+static enum theft_trial_res prop_defer_free_nulls_pointer(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    size_t size = (size_t)(*val_ptr % 256) + 1;
+
+    char *buf = (char *)malloc(size);
+    if (!buf) {
+        return THEFT_TRIAL_SKIP;
+    }
+    {
+        defer_free(buf);
+        buf[0] = 'x';
+    }
+    /* The user's pointer itself must be NULLed, not a private copy */
+    if (buf != NULL) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -229,8 +263,13 @@ static DeferTest defer_tests[] = {
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 23: Defer captures values at declaration time",
+        "Property 23: defer_capture_int captures values at declaration time",
         prop_defer_value_capture,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 24: defer_free frees and NULLs the user's pointer",
+        prop_defer_free_nulls_pointer,
         THEFT_BUILTIN_int64_t
     },
 };

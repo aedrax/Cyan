@@ -299,17 +299,28 @@ typedef enum {
      * @note Overwrites existing value if key already exists \
      */ \
     static inline void hashmap_##K##_##V##_insert(HashMap_##K##_##V *m, K key, V value) { \
-        /* Initialize if empty */ \
+        /* Initialize buckets in place if empty, preserving any custom \
+         * hash_fn/equal_fn the user configured before the first insert */ \
         if (m->capacity == 0) { \
-            *m = hashmap_##K##_##V##_with_capacity(CYAN_HASHMAP_INITIAL_CAPACITY); \
-        } \
-        \
-        /* Check load factor and resize if needed */ \
-        if ((m->len + 1) * 100 / m->capacity > CYAN_HASHMAP_LOAD_FACTOR) { \
-            _hashmap_##K##_##V##_resize(m, m->capacity * 2); \
+            m->buckets = (_MapEntry_##K##_##V *)calloc( \
+                CYAN_HASHMAP_INITIAL_CAPACITY, sizeof(_MapEntry_##K##_##V)); \
+            if (!m->buckets) CYAN_PANIC("allocation failed"); \
+            m->capacity = CYAN_HASHMAP_INITIAL_CAPACITY; \
+            m->len = 0; \
+            if (!m->hash_fn) m->hash_fn = _cyan_fnv1a_hash; \
+            if (!m->equal_fn) m->equal_fn = _cyan_default_equal; \
         } \
         \
         size_t idx = _hashmap_##K##_##V##_find_bucket(m, key, true); \
+        bool is_new = idx >= m->capacity || \
+                      m->buckets[idx].state != _CYAN_ENTRY_OCCUPIED; \
+        \
+        /* Only a new entry can push the load factor over the threshold; \
+         * overwriting an existing key never requires a resize */ \
+        if (is_new && (m->len + 1) * 100 / m->capacity > CYAN_HASHMAP_LOAD_FACTOR) { \
+            _hashmap_##K##_##V##_resize(m, m->capacity * 2); \
+            idx = _hashmap_##K##_##V##_find_bucket(m, key, true); \
+        } \
         \
         if (m->buckets[idx].state != _CYAN_ENTRY_OCCUPIED) { \
             /* New entry */ \
@@ -473,49 +484,68 @@ typedef enum {
  * HashMap Convenience Macros
  *============================================================================*/
 
+#if defined(__GNUC__) || defined(__clang__)
+
 /**
  * @brief Insert a key-value pair into the map via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  * @param k The key
  * @param val The value
  */
-#define MAP_INSERT(m, k, val) ((m).vt->insert(&(m), (k), (val)))
+#define MAP_INSERT(m, k, val) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->insert(_cyan_mp, (k), (val)); })
 
 /**
  * @brief Get value by key via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  * @param k The key
  * @return Option containing the value, or None if not found
  */
-#define MAP_GET(m, k) ((m).vt->get(&(m), (k)))
+#define MAP_GET(m, k) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->get(_cyan_mp, (k)); })
 
 /**
  * @brief Check if key exists in map via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  * @param k The key
  * @return true if key exists, false otherwise
  */
-#define MAP_CONTAINS(m, k) ((m).vt->contains(&(m), (k)))
+#define MAP_CONTAINS(m, k) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->contains(_cyan_mp, (k)); })
 
 /**
  * @brief Remove a key from the map via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  * @param k The key
  * @return Option containing the removed value, or None if not found
  */
-#define MAP_REMOVE(m, k) ((m).vt->remove(&(m), (k)))
+#define MAP_REMOVE(m, k) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->remove(_cyan_mp, (k)); })
 
 /**
  * @brief Get the number of entries via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  * @return Number of entries
  */
-#define MAP_LEN(m) ((m).vt->len(&(m)))
+#define MAP_LEN(m) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->len(_cyan_mp); })
 
 /**
  * @brief Free all memory associated with the map via vtable
- * @param m The map (not a pointer)
+ * @param m The map (an lvalue, not a pointer)
  */
+#define MAP_FREE(m) \
+    ({ __typeof__(m) *_cyan_mp = &(m); _cyan_mp->vt->free(_cyan_mp); })
+
+#else /* Fallbacks: evaluate m more than once */
+
+#define MAP_INSERT(m, k, val) ((m).vt->insert(&(m), (k), (val)))
+#define MAP_GET(m, k) ((m).vt->get(&(m), (k)))
+#define MAP_CONTAINS(m, k) ((m).vt->contains(&(m), (k)))
+#define MAP_REMOVE(m, k) ((m).vt->remove(&(m), (k)))
+#define MAP_LEN(m) ((m).vt->len(&(m)))
 #define MAP_FREE(m) ((m).vt->free(&(m)))
+
+#endif
 
 #endif /* CYAN_HASHMAP_H */

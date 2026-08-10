@@ -45,17 +45,22 @@
  *     { printf("Got %d\n", val); },
  *     { printf("Nothing\n"); }
  *   );
+ *
+ * @note break/continue inside a branch target the user's enclosing loop or
+ *       switch, matching normal C control flow (the macro deliberately avoids
+ *       the do-while(0) wrapper, which would capture them).
  */
-#define match_option(opt, T, var, some_branch, none_branch) do { \
-    Option_##T CYAN_UNIQUE(_opt_val_) = (opt); \
-    if (is_some(CYAN_UNIQUE(_opt_val_))) { \
-        T var = CYAN_UNIQUE(_opt_val_).value; \
-        (void)var; \
-        some_branch \
-    } else { \
-        none_branch \
-    } \
-} while(0)
+#define match_option(opt, T, var, some_branch, none_branch) \
+    if (1) { \
+        Option_##T CYAN_UNIQUE(_opt_val_) = (opt); \
+        if (is_some(CYAN_UNIQUE(_opt_val_))) { \
+            T var = CYAN_UNIQUE(_opt_val_).value; \
+            (void)var; \
+            some_branch \
+        } else { \
+            none_branch \
+        } \
+    } else ((void)0)
 
 /**
  * @brief Pattern match on an Option type (expression form)
@@ -106,19 +111,24 @@
  *     { printf("Success: %d\n", val); },
  *     { printf("Error: %s\n", err); }
  *   );
+ *
+ * @note break/continue inside a branch target the user's enclosing loop or
+ *       switch, matching normal C control flow (the macro deliberately avoids
+ *       the do-while(0) wrapper, which would capture them).
  */
-#define match_result(res, T, E, ok_var, err_var, ok_branch, err_branch) do { \
-    Result_##T##_##E CYAN_UNIQUE(_res_val_) = (res); \
-    if (is_ok(CYAN_UNIQUE(_res_val_))) { \
-        T ok_var = CYAN_UNIQUE(_res_val_).ok_value; \
-        (void)ok_var; \
-        ok_branch \
-    } else { \
-        E err_var = CYAN_UNIQUE(_res_val_).err_value; \
-        (void)err_var; \
-        err_branch \
-    } \
-} while(0)
+#define match_result(res, T, E, ok_var, err_var, ok_branch, err_branch) \
+    if (1) { \
+        Result_##T##_##E CYAN_UNIQUE(_res_val_) = (res); \
+        if (is_ok(CYAN_UNIQUE(_res_val_))) { \
+            T ok_var = CYAN_UNIQUE(_res_val_).ok_value; \
+            (void)ok_var; \
+            ok_branch \
+        } else { \
+            E err_var = CYAN_UNIQUE(_res_val_).err_value; \
+            (void)err_var; \
+            err_branch \
+        } \
+    } else ((void)0)
 
 /**
  * @brief Pattern match on a Result type (expression form)

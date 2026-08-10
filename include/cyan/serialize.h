@@ -450,68 +450,110 @@ static inline char *serialize_float(float val) {
  *   //   3
  *   // )
  */
+/**
+ * @brief Ensure the pretty_print output buffer can hold `extra` more bytes
+ * @param buf Pointer to the buffer pointer (updated on realloc)
+ * @param cap Pointer to the current capacity (updated on realloc)
+ * @param len Bytes currently used
+ * @param extra Additional bytes needed (excluding null terminator)
+ */
+static inline void _cyan_pp_reserve(char **buf, size_t *cap, size_t len, size_t extra) {
+    if (extra > SIZE_MAX - len - 1) CYAN_PANIC("pretty_print: output too large");
+    size_t needed = len + extra + 1;
+    if (needed <= *cap) return;
+    size_t new_cap = *cap;
+    while (new_cap < needed) {
+        if (new_cap > SIZE_MAX / 2) {
+            new_cap = needed;
+            break;
+        }
+        new_cap *= 2;
+    }
+    char *new_buf = (char *)realloc(*buf, new_cap);
+    if (!new_buf) CYAN_PANIC("allocation failed");
+    *buf = new_buf;
+    *cap = new_cap;
+}
+
 static inline char *pretty_print(const char *serialized, int indent_width) {
     if (!serialized) {
-        char *buf = (char *)malloc(1);
-        if (!buf) CYAN_PANIC("allocation failed");
-        buf[0] = '\0';
-        return buf;
+        char *empty = (char *)malloc(1);
+        if (!empty) CYAN_PANIC("allocation failed");
+        empty[0] = '\0';
+        return empty;
     }
-    
-    /* Calculate output size (worst case: each char gets newline + indent) */
+    if (indent_width < 0) indent_width = 0;
+
+    /* The output grows dynamically: deeply nested input needs
+     * depth * indent_width bytes of indentation per line, which a fixed
+     * per-character estimate cannot bound (it previously overflowed the
+     * heap on inputs like "((((((...") */
     size_t input_len = strlen(serialized);
-    size_t max_output = input_len * (1 + indent_width + 1) + 1;
-    
-    char *buf = (char *)malloc(max_output);
+    size_t cap = input_len + 16;
+    char *buf = (char *)malloc(cap);
     if (!buf) CYAN_PANIC("allocation failed");
-    
-    char *out = buf;
-    int depth = 0;
+
+    size_t len = 0;
+    size_t depth = 0;
     bool in_string = false;
+    bool escape_next = false;
     bool prev_was_open = false;
-    
+    size_t indent = (size_t)indent_width;
+
     for (const char *p = serialized; *p; p++) {
         if (in_string) {
-            *out++ = *p;
-            if (*p == '"' && (p == serialized || *(p-1) != '\\')) {
+            _cyan_pp_reserve(&buf, &cap, len, 1);
+            buf[len++] = *p;
+            /* Track escapes as a state machine so a string ending in an
+             * escaped backslash (\\") still closes on its real quote */
+            if (escape_next) {
+                escape_next = false;
+            } else if (*p == '\\') {
+                escape_next = true;
+            } else if (*p == '"') {
                 in_string = false;
             }
             continue;
         }
-        
+
         switch (*p) {
             case '"':
                 in_string = true;
-                *out++ = *p;
+                escape_next = false;
+                _cyan_pp_reserve(&buf, &cap, len, 1);
+                buf[len++] = *p;
                 prev_was_open = false;
                 break;
-                
+
             case '(':
-                *out++ = '(';
-                *out++ = '\n';
                 depth++;
-                for (int i = 0; i < depth * indent_width; i++) {
-                    *out++ = ' ';
+                _cyan_pp_reserve(&buf, &cap, len, 2 + depth * indent);
+                buf[len++] = '(';
+                buf[len++] = '\n';
+                for (size_t i = 0; i < depth * indent; i++) {
+                    buf[len++] = ' ';
                 }
                 prev_was_open = true;
                 break;
-                
+
             case ')':
                 if (!prev_was_open) {
-                    *out++ = '\n';
-                    depth--;
-                    for (int i = 0; i < depth * indent_width; i++) {
-                        *out++ = ' ';
+                    if (depth > 0) depth--;
+                    _cyan_pp_reserve(&buf, &cap, len, 2 + depth * indent);
+                    buf[len++] = '\n';
+                    for (size_t i = 0; i < depth * indent; i++) {
+                        buf[len++] = ' ';
                     }
                 } else {
                     /* Remove the newline and indent we just added */
-                    out -= (depth * indent_width + 1);
-                    depth--;
+                    len -= depth * indent + 1;
+                    if (depth > 0) depth--;
+                    _cyan_pp_reserve(&buf, &cap, len, 1);
                 }
-                *out++ = ')';
+                buf[len++] = ')';
                 prev_was_open = false;
                 break;
-                
+
             case ' ':
             case '\t':
             case '\n':
@@ -521,29 +563,31 @@ static inline char *pretty_print(const char *serialized, int indent_width) {
                     /* Skip consecutive whitespace */
                     while (*(p+1) && isspace((unsigned char)*(p+1))) p++;
                     if (*(p+1) && *(p+1) != ')') {
-                        *out++ = '\n';
-                        for (int i = 0; i < depth * indent_width; i++) {
-                            *out++ = ' ';
+                        _cyan_pp_reserve(&buf, &cap, len, 1 + depth * indent);
+                        buf[len++] = '\n';
+                        for (size_t i = 0; i < depth * indent; i++) {
+                            buf[len++] = ' ';
                         }
                     }
                 } else if (depth == 0) {
-                    *out++ = *p;
+                    _cyan_pp_reserve(&buf, &cap, len, 1);
+                    buf[len++] = *p;
                 }
                 prev_was_open = false;
                 break;
-                
+
             default:
-                *out++ = *p;
+                _cyan_pp_reserve(&buf, &cap, len, 1);
+                buf[len++] = *p;
                 prev_was_open = false;
                 break;
         }
     }
-    
-    *out = '\0';
-    
+
+    buf[len] = '\0';
+
     /* Shrink buffer to actual size */
-    size_t actual_len = (size_t)(out - buf) + 1;
-    char *result = (char *)realloc(buf, actual_len);
+    char *result = (char *)realloc(buf, len + 1);
     return result ? result : buf;
 }
 

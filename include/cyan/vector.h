@@ -100,6 +100,7 @@
     static inline Vec_##T vec_##T##_with_capacity(size_t cap) { \
         Vec_##T v = { .data = NULL, .len = 0, .cap = cap, .vt = &_vec_##T##_vt }; \
         if (cap > 0) { \
+            if (cap > SIZE_MAX / sizeof(T)) CYAN_PANIC("vector capacity overflow"); \
             v.data = (T *)malloc(cap * sizeof(T)); \
             if (!v.data) CYAN_PANIC("allocation failed"); \
         } \
@@ -115,7 +116,19 @@
      */ \
     static inline void vec_##T##_push(Vec_##T *v, T elem) { \
         if (v->len >= v->cap) { \
-            size_t new_cap = v->cap == 0 ? CYAN_DEFAULT_CAPACITY : v->cap * CYAN_GROWTH_FACTOR; \
+            size_t new_cap; \
+            if (v->cap == 0) { \
+                new_cap = CYAN_DEFAULT_CAPACITY; \
+            } else if (v->cap > SIZE_MAX / CYAN_GROWTH_FACTOR) { \
+                CYAN_PANIC("vector capacity overflow"); \
+                return; \
+            } else { \
+                new_cap = v->cap * CYAN_GROWTH_FACTOR; \
+            } \
+            if (new_cap > SIZE_MAX / sizeof(T)) { \
+                CYAN_PANIC("vector capacity overflow"); \
+                return; \
+            } \
             T *new_data = (T *)realloc(v->data, new_cap * sizeof(T)); \
             if (!new_data) CYAN_PANIC("allocation failed"); \
             v->data = new_data; \
@@ -185,37 +198,67 @@
 
 /**
  * @brief Push an element to the vector via vtable
- * @param v The vector (not a pointer)
+ * @param v The vector (an lvalue, not a pointer)
  * @param elem Element to append
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define VEC_PUSH(v, elem) \
+    ({ __typeof__(v) *_cyan_vp = &(v); _cyan_vp->vt->push(_cyan_vp, (elem)); })
+#else
+/* Fallback: evaluates v more than once */
 #define VEC_PUSH(v, elem) ((v).vt->push(&(v), (elem)))
+#endif
 
 /**
  * @brief Pop the last element from the vector via vtable
- * @param v The vector (not a pointer)
+ * @param v The vector (an lvalue, not a pointer)
  * @return Option containing the last element, or None if empty
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define VEC_POP(v) \
+    ({ __typeof__(v) *_cyan_vp = &(v); _cyan_vp->vt->pop(_cyan_vp); })
+#else
+/* Fallback: evaluates v more than once */
 #define VEC_POP(v) ((v).vt->pop(&(v)))
+#endif
 
 /**
  * @brief Get element at index via vtable
- * @param v The vector (not a pointer)
+ * @param v The vector (an lvalue, not a pointer)
  * @param idx Index to access
  * @return Option containing the element, or None if out of bounds
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define VEC_GET(v, idx) \
+    ({ __typeof__(v) *_cyan_vp = &(v); _cyan_vp->vt->get(_cyan_vp, (idx)); })
+#else
+/* Fallback: evaluates v more than once */
 #define VEC_GET(v, idx) ((v).vt->get(&(v), (idx)))
+#endif
 
 /**
  * @brief Get the current length via vtable
- * @param v The vector (not a pointer)
+ * @param v The vector (an lvalue, not a pointer)
  * @return Current length
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define VEC_LEN(v) \
+    ({ __typeof__(v) *_cyan_vp = &(v); _cyan_vp->vt->len(_cyan_vp); })
+#else
+/* Fallback: evaluates v more than once */
 #define VEC_LEN(v) ((v).vt->len(&(v)))
+#endif
 
 /**
  * @brief Free all memory associated with the vector via vtable
- * @param v The vector (not a pointer)
+ * @param v The vector (an lvalue, not a pointer)
  */
+#if defined(__GNUC__) || defined(__clang__)
+#define VEC_FREE(v) \
+    ({ __typeof__(v) *_cyan_vp = &(v); _cyan_vp->vt->free(_cyan_vp); })
+#else
+/* Fallback: evaluates v more than once */
 #define VEC_FREE(v) ((v).vt->free(&(v)))
+#endif
 
 #endif /* CYAN_VECTOR_H */

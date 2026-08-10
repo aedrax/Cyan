@@ -57,14 +57,24 @@
 /**
  * @brief Internal helper to panic and return a dummy value for expression context
  * @param msg The panic message
- * @param dummy A dummy value to satisfy type requirements (never returned)
- * 
+ * @param dummy A dummy value to satisfy type requirements (only returned if the
+ *              panic handler returns, e.g. a custom CYAN_PANIC using longjmp
+ *              never reaches it)
+ *
  * This macro is used in expression contexts where a value must be returned
- * (e.g., ternary operators). The dummy value is never actually returned
- * because abort() is called first.
+ * (e.g., ternary operators). It routes through CYAN_PANIC so custom panic
+ * handlers apply to expression-context panics as well. Override by defining
+ * CYAN_PANIC_EXPR before including Cyan headers.
  */
+#ifndef CYAN_PANIC_EXPR
+#if defined(__GNUC__) || defined(__clang__)
+#define CYAN_PANIC_EXPR(msg, dummy) \
+    ({ CYAN_PANIC(msg); (dummy); })
+#else
 #define CYAN_PANIC_EXPR(msg, dummy) \
     (fprintf(stderr, "PANIC at %s:%d: %s\n", __FILE__, __LINE__, msg), abort(), (dummy))
+#endif
+#endif
 
 /*============================================================================
  * Utility Macros
@@ -153,6 +163,13 @@ typedef _Bool bool;
 #ifndef CYAN_GROWTH_FACTOR
 #define CYAN_GROWTH_FACTOR 2
 #endif
+
+/* A growth factor <= 1 would make capacity-growth loops in string.h and
+ * vector.h spin forever; reject invalid configuration at compile time. */
+_Static_assert(CYAN_GROWTH_FACTOR > 1,
+               "CYAN_GROWTH_FACTOR must be greater than 1");
+_Static_assert(CYAN_DEFAULT_CAPACITY > 0,
+               "CYAN_DEFAULT_CAPACITY must be at least 1");
 
 /**
  * @brief Default coroutine stack size in bytes

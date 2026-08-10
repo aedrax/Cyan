@@ -68,11 +68,20 @@
 /** @brief Defined when functional primitives (map, filter, reduce) are available */
 #define CYAN_HAS_FUNCTIONAL 1
 
-/** @brief Defined when defer mechanism is available */
+/** @brief 1 when the defer mechanism is available (GCC nested functions or
+ *  Clang blocks), 0 otherwise */
+#if defined(__GNUC__) || defined(__clang__)
 #define CYAN_HAS_DEFER 1
+#else
+#define CYAN_HAS_DEFER 0
+#endif
 
-/** @brief Defined when coroutines are available */
+/** @brief 1 when coroutines are available (requires POSIX ucontext), 0 otherwise */
+#if defined(__unix__) || defined(__unix) || defined(__APPLE__)
 #define CYAN_HAS_CORO 1
+#else
+#define CYAN_HAS_CORO 0
+#endif
 
 /** @brief Defined when serialization is available */
 #define CYAN_HAS_SERIALIZE 1
@@ -149,14 +158,18 @@
 #include "serialize.h"
 
 /* Resource management */
+#if CYAN_HAS_DEFER
 #include "defer.h"
+#endif
 #include "smartptr.h"
 
 /* Pattern matching - works with Option and Result */
 #include "match.h"
 
 /* Concurrency */
+#if CYAN_HAS_CORO
 #include "coro.h"
+#endif
 #include "channel.h"
 
 /* Bit manipulation */

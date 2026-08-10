@@ -256,101 +256,138 @@
  * Vtable Convenience Macros
  *============================================================================*/
 
+#if defined(__GNUC__) || defined(__clang__)
+
 /**
  * @brief Set bit at index via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_SET(bs, i)       ((bs).vt->bs_set(&(bs), (i)))
+#define BS_SET(bs, i) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_set(_cyan_bsp, (i)); })
 
 /**
  * @brief Clear bit at index via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_CLEAR(bs, i)     ((bs).vt->bs_clear(&(bs), (i)))
+#define BS_CLEAR(bs, i) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_clear(_cyan_bsp, (i)); })
 
 /**
  * @brief Get bit at index via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  * @return true if bit is set, false otherwise
  */
-#define BS_GET(bs, i)       ((bs).vt->bs_get(&(bs), (i)))
+#define BS_GET(bs, i) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_get(_cyan_bsp, (i)); })
 
 /**
  * @brief Toggle bit at index via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_TOGGLE(bs, i)    ((bs).vt->bs_toggle(&(bs), (i)))
+#define BS_TOGGLE(bs, i) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_toggle(_cyan_bsp, (i)); })
 
 /**
  * @brief Union of two bitsets via vtable
- * @param a First bitset
- * @param b Second bitset
+ * @param a First bitset (an lvalue)
+ * @param b Second bitset (an lvalue)
  * @return New bitset with bits set where either input has bits set
  */
-#define BS_UNION(a, b)      ((a).vt->bs_union(&(a), &(b)))
+#define BS_UNION(a, b) \
+    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
+       _cyan_bsa->vt->bs_union(_cyan_bsa, _cyan_bsb); })
 
 /**
  * @brief Intersection of two bitsets via vtable
- * @param a First bitset
- * @param b Second bitset
+ * @param a First bitset (an lvalue)
+ * @param b Second bitset (an lvalue)
  * @return New bitset with bits set where both inputs have bits set
  */
-#define BS_INTERSECT(a, b)  ((a).vt->bs_intersect(&(a), &(b)))
+#define BS_INTERSECT(a, b) \
+    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
+       _cyan_bsa->vt->bs_intersect(_cyan_bsa, _cyan_bsb); })
 
 /**
  * @brief Difference of two bitsets via vtable
- * @param a First bitset
- * @param b Second bitset
+ * @param a First bitset (an lvalue)
+ * @param b Second bitset (an lvalue)
  * @return New bitset with bits set in a but not in b
  */
-#define BS_DIFF(a, b)       ((a).vt->bs_diff(&(a), &(b)))
+#define BS_DIFF(a, b) \
+    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
+       _cyan_bsa->vt->bs_diff(_cyan_bsa, _cyan_bsb); })
 
 /**
  * @brief Complement of a bitset via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @return New bitset with all bits flipped within the N-bit range
  */
-#define BS_COMPLEMENT(bs)   ((bs).vt->bs_complement(&(bs)))
+#define BS_COMPLEMENT(bs) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_complement(_cyan_bsp); })
 
 /**
  * @brief Check equality of two bitsets via vtable
- * @param a First bitset
- * @param b Second bitset
+ * @param a First bitset (an lvalue)
+ * @param b Second bitset (an lvalue)
  * @return true if all bits match, false otherwise
  */
-#define BS_EQ(a, b)         ((a).vt->bs_eq(&(a), &(b)))
+#define BS_EQ(a, b) \
+    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
+       _cyan_bsa->vt->bs_eq(_cyan_bsa, _cyan_bsb); })
 
 /**
  * @brief Count set bits via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @return Number of bits set to 1
  */
-#define BS_COUNT(bs)        ((bs).vt->bs_count(&(bs)))
+#define BS_COUNT(bs) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_count(_cyan_bsp); })
 
 /**
  * @brief Check if all bits are set via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @return true if all N bits are set
  */
-#define BS_ALL(bs)          ((bs).vt->bs_all(&(bs)))
+#define BS_ALL(bs) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_all(_cyan_bsp); })
 
 /**
  * @brief Check if any bit is set via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @return true if at least one bit is set
  */
-#define BS_ANY(bs)          ((bs).vt->bs_any(&(bs)))
+#define BS_ANY(bs) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_any(_cyan_bsp); })
 
 /**
  * @brief Check if no bits are set via vtable
- * @param bs Bitset instance
+ * @param bs Bitset instance (an lvalue)
  * @return true if no bits are set
  */
+#define BS_NONE(bs) \
+    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_none(_cyan_bsp); })
+
+#else /* Fallbacks: evaluate their bitset arguments more than once */
+
+#define BS_SET(bs, i)       ((bs).vt->bs_set(&(bs), (i)))
+#define BS_CLEAR(bs, i)     ((bs).vt->bs_clear(&(bs), (i)))
+#define BS_GET(bs, i)       ((bs).vt->bs_get(&(bs), (i)))
+#define BS_TOGGLE(bs, i)    ((bs).vt->bs_toggle(&(bs), (i)))
+#define BS_UNION(a, b)      ((a).vt->bs_union(&(a), &(b)))
+#define BS_INTERSECT(a, b)  ((a).vt->bs_intersect(&(a), &(b)))
+#define BS_DIFF(a, b)       ((a).vt->bs_diff(&(a), &(b)))
+#define BS_COMPLEMENT(bs)   ((bs).vt->bs_complement(&(bs)))
+#define BS_EQ(a, b)         ((a).vt->bs_eq(&(a), &(b)))
+#define BS_COUNT(bs)        ((bs).vt->bs_count(&(bs)))
+#define BS_ALL(bs)          ((bs).vt->bs_all(&(bs)))
+#define BS_ANY(bs)          ((bs).vt->bs_any(&(bs)))
 #define BS_NONE(bs)         ((bs).vt->bs_none(&(bs)))
+
+#endif
 
 
 /*============================================================================
@@ -433,7 +470,7 @@
  * Example:
  *   FLAGS_SET(perms, Permissions_READ);
  */
-#define FLAGS_SET(bs, flag)   ((bs).vt->bs_set(&(bs), (flag)))
+#define FLAGS_SET(bs, flag)   BS_SET(bs, flag)
 
 /**
  * @brief Clear a flag in a bitset
@@ -443,7 +480,7 @@
  * Example:
  *   FLAGS_CLEAR(perms, Permissions_READ);
  */
-#define FLAGS_CLEAR(bs, flag) ((bs).vt->bs_clear(&(bs), (flag)))
+#define FLAGS_CLEAR(bs, flag) BS_CLEAR(bs, flag)
 
 /**
  * @brief Check if a flag is set in a bitset
@@ -454,7 +491,7 @@
  * Example:
  *   if (FLAGS_HAS(perms, Permissions_READ)) { ... }
  */
-#define FLAGS_HAS(bs, flag)   ((bs).vt->bs_get(&(bs), (flag)))
+#define FLAGS_HAS(bs, flag)   BS_GET(bs, flag)
 
 
 #endif /* CYAN_BITSET_H */
