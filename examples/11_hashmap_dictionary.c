@@ -13,6 +13,7 @@
 OPTION_DEFINE(int);                 /* Required for Option_int */
 HASHMAP_DEFINE(int, int);           /* int -> int mapping */
 HASHMAP_ITER_DEFINE(int, int);      /* Iterator for int -> int */
+HASHMAP_STR_DEFINE(int);            /* string -> int mapping (owned keys) */
 
 int main(void) {
     printf("=== HashMap Dictionary Example ===\n\n");
@@ -138,6 +139,46 @@ int main(void) {
     
     hashmap_int_int_free(&large_map);
     
+    /* --------------------------------------------------------
+     * 10. Putting it together: an office phone book
+     * -------------------------------------------------------- */
+    printf("10. Putting it together: an office phone book\n");
+
+    /* Name -> employee id: HASHMAP_STR keys are content-hashed and OWNED
+     * (the map copies each key string on insert and frees it on free) */
+    HashMap_str_int ids = hashmap_str_int_new();
+    hashmap_str_int_insert(&ids, "Ada", 101);
+    hashmap_str_int_insert(&ids, "Grace", 102);
+    hashmap_str_int_insert(&ids, "Edsger", 103);
+
+    /* Employee id -> desk extension */
+    HashMap_int_int extensions = hashmap_int_int_new();
+    hashmap_int_int_insert(&extensions, 101, 4411);
+    hashmap_int_int_insert(&extensions, 102, 4422);
+    hashmap_int_int_insert(&extensions, 103, 4433);
+
+    /* Look someone up by name: two map hops */
+    const char *who = "Grace";
+    Option_int emp_id = hashmap_str_int_get(&ids, who);
+    if (is_some(emp_id)) {
+        Option_int ext = hashmap_int_int_get(&extensions, unwrap(emp_id));
+        printf("   %s -> id %d -> extension %d\n",
+               who, unwrap(emp_id), unwrap_or(ext, 0));
+    }
+    printf("   unknown name \"Alan\": %s\n",
+           hashmap_str_int_contains(&ids, "Alan") ? "found" : "not found");
+
+    /* MAP_FOREACH lists every live entry (iteration order is unspecified) */
+    printf("   full extension listing (%zu entries):\n", MAP_LEN(int, int, extensions));
+    MapPair_int_int entry;
+    MAP_FOREACH(int, int, extensions, entry) {
+        printf("     id %d -> ext %d\n", entry.key, entry.value);
+    }
+    printf("\n");
+
+    hashmap_str_int_free(&ids);          /* frees the owned key copies too */
+    hashmap_int_int_free(&extensions);
+
     /* --------------------------------------------------------
      * Cleanup
      * -------------------------------------------------------- */

@@ -215,9 +215,9 @@ _Static_assert(CYAN_DEFAULT_CAPACITY > 0,
  *============================================================================*/
 
 #define CYAN_VERSION_MAJOR 0
-#define CYAN_VERSION_MINOR 2
+#define CYAN_VERSION_MINOR 3
 #define CYAN_VERSION_PATCH 0
-#define CYAN_VERSION_STRING "0.2.0"
+#define CYAN_VERSION_STRING "0.3.0"
 
 /** @brief Version as single integer for comparison: (major * 10000 + minor * 100 + patch) */
 #define CYAN_VERSION ((CYAN_VERSION_MAJOR * 10000) + (CYAN_VERSION_MINOR * 100) + CYAN_VERSION_PATCH)

@@ -1804,6 +1804,20 @@ make run  # Run all examples
 
 ## Changelog
 
+### 0.3.0
+
+**Additions:**
+
+- **Coroutine-aware channels (headline).** In single-threaded mode, `chan_T_send`/`chan_T_recv` called inside a coroutine now yield-and-retry instead of returning `CHAN_WOULD_BLOCK`/`None`, giving Go-style CSP. Drive coroutines with the new `coro_run(coros, n)` round-robin scheduler, which returns `false` on deadlock (no completion and no channel progress in a full pass). New `coro_current()` and `coro_mark_progress()`. Behavior outside coroutines, for `try_*` variants, and in thread-safe mode is unchanged. Coroutines, their channels, and `coro_run` must share one translation unit.
+- **HashSet** (`hashset.h`, included by `cyan.h`, `CYAN_HAS_HASHSET`): `HASHSET_DEFINE(T)` / `HASHSET_ITER_DEFINE(T)` with `add` (returns whether newly added), `contains`, `remove`, `len`, `free`, iteration, and type-first `SET_*` macros including `SET_FOREACH`.
+- **Slice materialization:** `string_from_slice(Slice_char)` produces an owned, null-terminated `String` from a split piece; `string_slice_eq(slice, cstr)` compares without allocating.
+- **Vector search/sort/iteration:** `vec_T_find(v, pred)` → `Option_size_t`, `vec_T_contains(v, pred)`, `vec_T_sort(v, cmp)` (qsort-style comparator), plus `VEC_FIND`/`VEC_CONTAINS`/`VEC_SORT` and the `VEC_FOREACH(T, v, it)` loop macro.
+- **HashMap iteration macro:** `MAP_FOREACH(K, V, m, pair)` over a pre-declared `MapPair_K_V pair;` (requires `HASHMAP_ITER_DEFINE`; single loop, so `break`/`continue` behave normally).
+
+**Breaking change:**
+
+- `Option_size_t` is now defined by `option.h` itself; remove any `OPTION_DEFINE(size_t)` from user code.
+
 ### 0.2.0
 
 **Breaking changes:**

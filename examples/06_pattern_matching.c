@@ -38,6 +38,34 @@ Result_f64_const_charp safe_sqrt(f64 x) {
     return Ok(f64, const_charp, guess);
 }
 
+// --- Tiny connection state machine (used in example 7) ---
+typedef enum { ST_IDLE, ST_CONNECTING, ST_ONLINE } ConnState;
+
+const char *state_name(ConnState s) {
+    switch (s) {
+        case ST_IDLE:       return "IDLE";
+        case ST_CONNECTING: return "CONNECTING";
+        case ST_ONLINE:     return "ONLINE";
+    }
+    return "?";
+}
+
+// Recognize an event name; unknown events produce None
+Option_i32 parse_event(const char *ev) {
+    if (ev[0] == 'd' && ev[1] == 'i') return Some(i32, 0);  // dial
+    if (ev[0] == 'a') return Some(i32, 1);                  // ack
+    if (ev[0] == 'd' && ev[1] == 'r') return Some(i32, 2);  // drop
+    return None(i32);
+}
+
+// A transition may be invalid for the current state
+Result_i32_const_charp next_state(ConnState s, i32 event) {
+    if (s == ST_IDLE && event == 0)       return Ok(i32, const_charp, ST_CONNECTING);
+    if (s == ST_CONNECTING && event == 1) return Ok(i32, const_charp, ST_ONLINE);
+    if (event == 2)                       return Ok(i32, const_charp, ST_IDLE);
+    return Err(i32, const_charp, "invalid transition");
+}
+
 i32 main(void) {
     printf("=== Pattern Matching Examples ===\n\n");
     
@@ -153,6 +181,27 @@ i32 main(void) {
     i32 safe_res = RES_UNWRAP_OK_OR(err_result, -1);
     printf("   RES_UNWRAP_OK_OR(Err, -1) = %d\n", safe_res);
     
+    // Example 7: Putting it together - state machine dispatch
+    printf("\n7. Putting It Together - State Machine Dispatch:\n");
+    ConnState state = ST_IDLE;
+    const char *events[] = {"dial", "ack", "ping", "ack", "drop"};
+
+    for (usize i = 0; i < 5; i++) {
+        printf("   [%-10s] event \"%s\": ", state_name(state), events[i]);
+        Option_i32 ev = parse_event(events[i]);
+        match_option(ev, i32, code, {
+            // Known event: attempt the transition, which itself may fail
+            Result_i32_const_charp t = next_state(state, code);
+            match_result(t, i32, const_charp, ns, e,
+                { state = (ConnState)ns; printf("-> %s\n", state_name(state)); },
+                { printf("ignored (%s)\n", e); }
+            );
+        }, {
+            printf("unknown event, state unchanged\n");
+        });
+    }
+    printf("   final state: %s\n", state_name(state));
+
     printf("\n=== Done ===\n");
     return 0;
 }

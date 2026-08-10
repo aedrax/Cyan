@@ -27,7 +27,11 @@ EXAMPLES = \
 	12_serialize_parsing \
 	13_slice_views \
 	14_string_manipulation \
-	16_bitset_integers
+	15_hashset_membership \
+	16_bitset_integers \
+	17_coro_channels \
+	18_result_pipeline \
+	19_word_count
 
 # Add build directory prefix to examples
 EXAMPLE_BINS = $(addprefix $(BUILD_DIR)/,$(EXAMPLES))

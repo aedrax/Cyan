@@ -9,10 +9,15 @@
 #include <stdio.h>
 #include <cyan/common.h>
 #include <cyan/option.h>
+#include <cyan/result.h>
 
 // Define Option types for the types we'll use
 OPTION_DEFINE(i32);
 OPTION_DEFINE(f64);
+
+// Result type used by ok_or in example 8
+typedef const char* const_charp;
+RESULT_DEFINE(i32, const_charp);
 
 // A function that may or may not find a value
 Option_i32 find_first_even(i32 arr[], usize len) {
@@ -35,6 +40,23 @@ Option_f64 safe_reciprocal(i32 x) {
         return None(f64);
     }
     return Some(f64, 1.0 / (f64)x);
+}
+
+// --- Config lookup chain helpers (used in example 8) ---
+// Simulated configuration sources: each returns Some(port) when it defines one.
+Option_i32 env_port(void)  { return None(i32); }        // env var not set
+Option_i32 file_port(void) { return Some(i32, 8080); }  // config file has it
+
+// Only non-privileged ports are acceptable for this app
+Option_i32 validate_port(i32 p) {
+    if (p < 1024 || p > 65535) return None(i32);
+    return Some(i32, p);
+}
+
+// try_some propagates None like Rust's `?`
+Option_i32 checked_port_from_file(void) {
+    i32 p = try_some(file_port());
+    return validate_port(p);
 }
 
 i32 main(void) {
@@ -118,6 +140,38 @@ i32 main(void) {
     Option_f64 no_recip = and_then(zero, f64, safe_reciprocal);
     printf("   and_then(Some(0), f64, safe_reciprocal) = %s\n",
            is_none(no_recip) ? "None" : "Some");
+
+    // Example 8: Putting it together - a config lookup chain
+    printf("\n8. Putting It Together - Config Lookup Chain:\n");
+
+    // Look up a port: environment first, config file as fallback, then validate
+    Option_i32 from_env = env_port();
+    Option_i32 raw_port = or_else(from_env, file_port);       // env -> file
+    printf("   env unset, or_else fell back to file: %s\n",
+           is_some(raw_port) ? "Some" : "None");
+
+    Option_i32 port = and_then(raw_port, i32, validate_port); // then validate
+    printf("   validated port (unwrap_or default 9000): %d\n", unwrap_or(port, 9000));
+
+    // expect() documents an invariant when a value must be present
+    // (expect is the short name for OPT_EXPECT; ok_or below is OPT_OK_OR)
+    i32 must_have = expect(port, "config file guarantees a port");
+    printf("   expect() on validated port: %d\n", must_have);
+    printf("   OPT_EXPECT (uppercase spelling): %d\n",
+           OPT_EXPECT(port, "config file guarantees a port"));
+
+    // try_some inside a helper propagates None automatically
+    Option_i32 helper = checked_port_from_file();
+    printf("   checked_port_from_file(): Some(%d)\n", unwrap(helper));
+
+    // ok_or converts the Option into a Result for error-reporting layers
+    Result_i32_const_charp as_result = ok_or(port, i32, const_charp, "no usable port");
+    printf("   ok_or(Some) -> %s(%d)\n",
+           is_ok(as_result) ? "Ok" : "Err", unwrap_ok_or(as_result, -1));
+
+    Option_i32 bad = validate_port(80);                       // privileged port -> None
+    Result_i32_const_charp bad_result = OPT_OK_OR(bad, i32, const_charp, "no usable port");
+    printf("   OPT_OK_OR(None) -> Err(\"%s\")\n", unwrap_err(bad_result));
 
     printf("\n=== Done ===\n");
     return 0;

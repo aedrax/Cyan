@@ -220,6 +220,10 @@ int main(void) {
     pos = string_find(&haystack, "cat");
     printf("   \"cat\" found: %s\n", is_some(pos) ? "yes" : "no");
 
+    /* The same search via the convenience macro */
+    Option_size_t macro_pos = STR_FIND(haystack, "fox");
+    printf("   STR_FIND(haystack, \"fox\") = %zu\n", unwrap_or(macro_pos, (size_t)0));
+
     printf("   Contains \"brown\": %s\n",
            string_contains(&haystack, "brown") ? "yes" : "no");
     printf("   Starts with \"The\": %s\n",
@@ -249,6 +253,47 @@ int main(void) {
     printf("\n");
 
     string_free(&csv);
+
+    /* --------------------------------------------------------
+     * 14. Putting it together: a CSV line parser
+     * -------------------------------------------------------- */
+    printf("14. Putting it together: a CSV line parser\n");
+
+    String line = string_from("  laptop , 2 ,  999.99 , laptop ");
+    printf("   raw line: \"%s\"\n", string_cstr(&line));
+
+    String fields[4];
+    size_t n_fields = 0;
+
+    Slice_char cursor = string_as_slice(&line);
+    Slice_char piece;
+    while (n_fields < 4 && string_split_next(&cursor, ',', &piece)) {
+        /* Cheap checks work on the raw slice - no allocation needed */
+        if (string_slice_eq(piece, " 2 ")) {
+            printf("   (piece %zu matches \" 2 \" via string_slice_eq, "
+                   "before any copy)\n", n_fields);
+        }
+        /* Materialize the piece into an owned String and trim it in place */
+        fields[n_fields] = string_from_slice(piece);
+        string_trim(&fields[n_fields]);
+        n_fields++;
+    }
+
+    printf("   parsed %zu fields:\n", n_fields);
+    for (size_t i = 0; i < n_fields; i++) {
+        printf("     [%zu] \"%s\"\n", i, string_cstr(&fields[i]));
+    }
+
+    /* string_eq compares by content: fields 0 and 3 are both "laptop" */
+    printf("   fields[0] == fields[3]: %s\n",
+           string_eq(&fields[0], &fields[3]) ? "yes" : "no");
+    printf("   fields[0] == fields[1]: %s\n\n",
+           string_eq(&fields[0], &fields[1]) ? "yes" : "no");
+
+    for (size_t i = 0; i < n_fields; i++) {
+        string_free(&fields[i]);
+    }
+    string_free(&line);
 
     /* --------------------------------------------------------
      * Cleanup

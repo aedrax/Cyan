@@ -35,8 +35,7 @@
 /* Define Option_char for string_get return type */
 OPTION_DEFINE(char);
 
-/* Define Option_size_t for string_find return type */
-OPTION_DEFINE(size_t);
+/* Option_size_t (for string_find) is provided by option.h */
 
 /* Define Vec_char for slice_from_vec compatibility */
 VECTOR_DEFINE(char);
@@ -442,6 +441,51 @@ static inline bool string_split_next(Slice_char *rest, char delim, Slice_char *o
         rest->len = 0;
     }
     return true;
+}
+
+/*============================================================================
+ * Slice Materialization
+ *============================================================================*/
+
+/**
+ * @brief Create an owned, null-terminated String from a character slice
+ * @param s The slice to copy (e.g. a piece produced by string_split_next)
+ * @return A new String containing a copy of the slice's bytes
+ *
+ * Example:
+ *   Slice_char rest = string_as_slice(&csv), part;
+ *   while (string_split_next(&rest, ',', &part)) {
+ *       String field = string_from_slice(part);   // usable as a C string
+ *       ...
+ *       string_free(&field);
+ *   }
+ */
+static inline String string_from_slice(Slice_char s) {
+    if (!s.data || s.len == 0) {
+        return string_new();
+    }
+    String out = string_with_capacity(s.len);
+    memcpy(out.data, s.data, s.len);
+    out.data[s.len] = '\0';
+    out.len = s.len;
+    return out;
+}
+
+/**
+ * @brief Compare a character slice against a C string without materializing
+ * @param s The slice (need not be null-terminated)
+ * @param cstr The null-terminated string to compare with (NULL never matches)
+ * @return true if the slice's bytes equal cstr exactly
+ *
+ * Example:
+ *   if (string_slice_eq(part, "verbose")) { ... }
+ */
+static inline bool string_slice_eq(Slice_char s, const char *cstr) {
+    if (!cstr) return false;
+    size_t n = strlen(cstr);
+    if (n != s.len) return false;
+    if (n == 0) return true;
+    return memcmp(s.data, cstr, n) == 0;
 }
 
 /*============================================================================

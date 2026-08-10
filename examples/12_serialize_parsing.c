@@ -221,6 +221,62 @@ int main(void) {
         printf("   Parse error: %s\n\n", unwrap_err(parsed_sexp));
     }
     
+    /* --------------------------------------------------------
+     * 10. Putting it together: a config round-trip as an SExp tree
+     * -------------------------------------------------------- */
+    printf("10. Putting it together: config round-trip via SExp\n");
+
+    /* Build (config (name "editor") (width 1280) (scale 1.5)) in code */
+    SExp *config = sexp_list_new();
+    sexp_list_push(config, sexp_symbol("config"));
+
+    SExp *name_pair = sexp_list_new();
+    sexp_list_push(name_pair, sexp_symbol("name"));
+    sexp_list_push(name_pair, sexp_string("editor"));
+    sexp_list_push(config, name_pair);
+
+    SExp *width_pair = sexp_list_new();
+    sexp_list_push(width_pair, sexp_symbol("width"));
+    sexp_list_push(width_pair, sexp_int(1280));
+    sexp_list_push(config, width_pair);
+
+    SExp *scale_pair = sexp_list_new();
+    sexp_list_push(scale_pair, sexp_symbol("scale"));
+    sexp_list_push(scale_pair, sexp_double(1.5));
+    sexp_list_push(config, scale_pair);
+
+    /* Serialize: this is the text you would write to a config file */
+    char *saved = serialize_sexp(config);
+    printf("   saved form: %s\n", saved);
+
+    /* Load it back and verify nothing was lost */
+    Result_SExpPtr_ParseError loaded = parse_sexp(saved, NULL);
+    if (is_ok(loaded)) {
+        SExp *cfg = unwrap_ok(loaded);
+        printf("   round-trip sexp_eq: %s\n", sexp_eq(config, cfg) ? "yes" : "no");
+
+        /* Read settings back out of the tree: (key value) pairs after the tag */
+        for (size_t i = 1; i < cfg->list.len; i++) {
+            SExp *pair = cfg->list.items[i];
+            SExp *key = pair->list.items[0];
+            SExp *val = pair->list.items[1];
+            printf("   %-6s = ", key->str);
+            switch (val->type) {
+                case SEXP_INT:    printf("%ld\n", val->i); break;
+                case SEXP_DOUBLE: printf("%g\n", val->d); break;
+                case SEXP_STRING: printf("\"%s\"\n", val->str); break;
+                default:          printf("(other)\n"); break;
+            }
+        }
+        sexp_free(cfg);
+    } else {
+        printf("   reload failed: %s\n", unwrap_err(loaded));
+    }
+
+    free(saved);
+    sexp_free(config);
+    printf("\n");
+
     printf("=== Serialization example complete ===\n");
     return 0;
 }

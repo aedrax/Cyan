@@ -36,6 +36,8 @@ extern int run_macro_tests(theft_seed seed, int *num_tests);
 extern int run_bitint_tests(theft_seed seed, int *num_tests);
 extern int run_bitset_tests(theft_seed seed, int *num_tests);
 extern int run_regression_tests(theft_seed seed, int *num_tests);
+extern int run_hashset_tests(theft_seed seed, int *num_tests);
+extern int run_coro_channel_tests(theft_seed seed, int *num_tests);
 
 /*============================================================================
  * Test Configuration
@@ -331,6 +333,24 @@ static void run_all_tests(void) {
     {
         int n = 0;
         int fails = run_regression_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
+
+    /* Hash set tests */
+    {
+        int n = 0;
+        int fails = run_hashset_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
+
+    /* Coroutine-aware channel tests */
+    {
+        int n = 0;
+        int fails = run_coro_channel_tests(seed, &n);
         g_results.failed += fails;
         g_results.passed += (n - fails);
         g_results.total += n;

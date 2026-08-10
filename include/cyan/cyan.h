@@ -76,6 +76,9 @@
 /** @brief Defined when HashMap is available */
 #define CYAN_HAS_HASHMAP 1
 
+/** @brief Defined when HashSet is available */
+#define CYAN_HAS_HASHSET 1
+
 /** @brief Defined when dynamic String is available */
 #define CYAN_HAS_STRING 1
 
@@ -134,6 +137,7 @@
 #include "slice.h"
 #include "string.h"
 #include "hashmap.h"
+#include "hashset.h"
 
 /* Functional primitives - work with collections */
 #include "functional.h"

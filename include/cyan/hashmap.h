@@ -443,6 +443,9 @@ typedef enum {
         V value; \
     } _MapPair_##K##_##V; \
     \
+    /* Public alias for user declarations (e.g. the MAP_FOREACH loop var) */ \
+    typedef _MapPair_##K##_##V MapPair_##K##_##V; \
+    \
     /* Define Option for the pair type */ \
     typedef struct { \
         bool has_value; \
@@ -735,5 +738,31 @@ typedef enum {
  * @param m The map (an lvalue, not a pointer)
  */
 #define MAP_FREE(K, V, m) hashmap_##K##_##V##_free(&(m))
+
+/**
+ * @brief Iterate over the map's live entries
+ * @param K The key type
+ * @param V The value type
+ * @param m The map (an lvalue; must not be modified during iteration)
+ * @param pair A pre-declared MapPair_K_V variable receiving each entry
+ *
+ * Requires HASHMAP_ITER_DEFINE(K, V). This is a single loop, so break and
+ * continue behave like a normal for loop. GNU C only (statement expression
+ * in the loop condition).
+ *
+ * Example:
+ *   MapPair_int_int pair;
+ *   MAP_FOREACH(int, int, m, pair) {
+ *       printf("%d -> %d\n", pair.key, pair.value);
+ *   }
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define MAP_FOREACH(K, V, m, pair) \
+    for (HashMapIter_##K##_##V CYAN_UNIQUE(_cyan_mit) = hashmap_##K##_##V##_iter(&(m)); \
+         ({ Option_MapPair_##K##_##V _cyan_mo = \
+                hashmap_##K##_##V##_iter_next(&CYAN_UNIQUE(_cyan_mit)); \
+            if (_cyan_mo.has_value) (pair) = _cyan_mo.value; \
+            _cyan_mo.has_value; }); )
+#endif
 
 #endif /* CYAN_HASHMAP_H */

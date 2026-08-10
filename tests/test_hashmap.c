@@ -9,6 +9,7 @@
  * - Property 45: HashMap remove then get returns None
  * - Property 46: HashMap macro == function behavioral equivalence
  * - Property 47: HashMap_str_int content-keyed operations
+ * - Property 48: MAP_FOREACH visits exactly the live entries
  */
 
 #include <stdio.h>
@@ -474,6 +475,115 @@ static enum theft_trial_res prop_str_map_content_keys(struct theft *t, void *arg
 }
 
 /*============================================================================
+ * Property 48: MAP_FOREACH visits exactly the live entries
+ * After a random sequence of inserts and removes over a small key domain
+ * (forcing collisions and tombstones), MAP_FOREACH visits each live
+ * key/value pair exactly once and visits nothing else.
+ *============================================================================*/
+
+static enum theft_trial_res prop_map_foreach_live_entries(struct theft *t, void *arg1) {
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr);
+
+    enum { KEY_DOMAIN = 32 };
+
+    HashMap_int_int m = hashmap_int_int_new();
+
+    /* Ground truth kept in parallel arrays indexed by key */
+    bool present[KEY_DOMAIN] = {false};
+    int expected_value[KEY_DOMAIN] = {0};
+
+    /* Random sequence of inserts and removes */
+    size_t num_ops = 20 + theft_random_choice(t, 60);
+    for (size_t op = 0; op < num_ops; op++) {
+        int key = (int)theft_random_choice(t, KEY_DOMAIN);
+        if (theft_random_choice(t, 3) != 0) {
+            int value = seed + (int)op;
+            hashmap_int_int_insert(&m, key, value);
+            present[key] = true;
+            expected_value[key] = value;
+        } else {
+            hashmap_int_int_remove(&m, key);
+            present[key] = false;
+        }
+    }
+
+    /* Count live entries in the ground truth */
+    size_t live = 0;
+    for (int k = 0; k < KEY_DOMAIN; k++) {
+        if (present[k]) live++;
+    }
+
+    if (hashmap_int_int_len(&m) != live) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* MAP_FOREACH must visit each live pair exactly once */
+    bool visited[KEY_DOMAIN] = {false};
+    size_t count = 0;
+
+    MapPair_int_int pair;
+    MAP_FOREACH(int, int, m, pair) {
+        if (pair.key < 0 || pair.key >= KEY_DOMAIN || !present[pair.key]) {
+            /* Visited a key that should not be in the map */
+            hashmap_int_int_free(&m);
+            return THEFT_TRIAL_FAIL;
+        }
+        if (visited[pair.key]) {
+            /* Duplicate visit */
+            hashmap_int_int_free(&m);
+            return THEFT_TRIAL_FAIL;
+        }
+        if (pair.value != expected_value[pair.key]) {
+            /* Stale value */
+            hashmap_int_int_free(&m);
+            return THEFT_TRIAL_FAIL;
+        }
+        visited[pair.key] = true;
+        count++;
+    }
+
+    if (count != live) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    for (int k = 0; k < KEY_DOMAIN; k++) {
+        if (present[k] != visited[k]) {
+            hashmap_int_int_free(&m);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* break exits the loop early: at most one visit */
+    size_t break_count = 0;
+    MAP_FOREACH(int, int, m, pair) {
+        break_count++;
+        break;
+    }
+    if (break_count > 1 || (live > 0 && break_count != 1)) {
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* An empty map yields zero visits */
+    HashMap_int_int empty = hashmap_int_int_new();
+    size_t empty_count = 0;
+    MAP_FOREACH(int, int, empty, pair) {
+        empty_count++;
+    }
+    if (empty_count != 0) {
+        hashmap_int_int_free(&empty);
+        hashmap_int_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    hashmap_int_int_free(&empty);
+
+    hashmap_int_int_free(&m);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -515,6 +625,11 @@ static HashMapTest hashmap_tests[] = {
     {
         "Property 47: HashMap_str_int content-keyed operations",
         prop_str_map_content_keys,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 48: MAP_FOREACH visits exactly the live entries",
+        prop_map_foreach_live_entries,
         THEFT_BUILTIN_int64_t
     },
 };

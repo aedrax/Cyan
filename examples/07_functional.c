@@ -39,6 +39,9 @@ i32 max_val(i32 a, i32 b) { return a > b ? a : b; }
 // Side-effect function
 void print_i32(i32 x) { printf("%d ", x); }
 
+// Pipeline helper for example 8: readings are stored in tenths of a degree
+i32 tenths_to_degrees(i32 t) { return t / 10; }
+
 i32 main(void) {
     printf("=== Functional Programming Examples ===\n\n");
     
@@ -188,7 +191,40 @@ i32 main(void) {
     printf("   Sum via reduce: %d\n", mv_sum);
 
     VEC_FREE(i32, mv);
-    
+
+    // Example 8: Putting it together - a sensor data pipeline
+    printf("\n8. Putting It Together - Sensor Data Pipeline:\n");
+    // Raw temperature readings in tenths of a degree; -999 marks a bad sample
+    i32 readings[] = {215, -999, 187, 240, -999, 198, 305, 172};
+    usize n_read = 8;
+
+    printf("   raw readings:      ");
+    foreach(readings, n_read, print_i32);
+    printf("\n");
+
+    // Stage 1: filter out sensor errors
+    i32 valid[8];
+    usize n_valid;
+    filter(readings, n_read, valid, &n_valid, is_positive);
+    printf("   valid samples (%zu): ", n_valid);
+    foreach(valid, n_valid, print_i32);
+    printf("\n");
+
+    // Stage 2: map tenths -> whole degrees
+    i32 degrees[8];
+    map(valid, n_valid, degrees, tenths_to_degrees);
+    printf("   in degrees:        ");
+    foreach(degrees, n_valid, print_i32);
+    printf("\n");
+
+    // Stage 3: reduce to summary statistics
+    i32 total;
+    reduce(total, degrees, n_valid, 0, add);
+    i32 hottest;
+    reduce(hottest, degrees, n_valid, degrees[0], max_val);
+    printf("   average: %d degrees, hottest: %d degrees\n",
+           total / (i32)n_valid, hottest);
+
     printf("\n=== Done ===\n");
     return 0;
 }

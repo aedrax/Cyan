@@ -179,6 +179,8 @@ typedef enum {
         if (!ch) return; \
         _chan_##T##_lock(ch); \
         ch->closed = true; \
+        /* Closing unblocks waiting coroutines: count as progress */ \
+        _CYAN_CHANNEL_MARK_PROGRESS(); \
         /* Wake up all waiting threads */ \
         _chan_##T##_signal_send(ch); \
         _chan_##T##_signal_recv(ch); \
@@ -277,15 +279,59 @@ typedef enum {
         } \
         \
         if (!_CYAN_CHANNEL_CAN_BLOCK) { \
-            /* Single-threaded mode: waiting can never be satisfied, so \
-             * return instead of spinning forever on a no-op wait */ \
-            if (ch->capacity == 0 || ch->count >= ch->capacity) { \
+            if (!_CYAN_CHANNEL_IN_CORO()) { \
+                /* Single-threaded, not in a coroutine: waiting can never \
+                 * be satisfied, so return instead of spinning forever */ \
+                if (ch->capacity == 0 || ch->count >= ch->capacity) { \
+                    _chan_##T##_unlock(ch); \
+                    return CHAN_WOULD_BLOCK; \
+                } \
+                ch->buffer[ch->tail] = value; \
+                ch->tail = (ch->tail + 1) % ch->capacity; \
+                ch->count++; \
+                _chan_##T##_signal_recv(ch); \
                 _chan_##T##_unlock(ch); \
-                return CHAN_WOULD_BLOCK; \
+                return CHAN_OK; \
+            } \
+            \
+            /* Inside a coroutine: cooperate by yielding until the \
+             * operation can complete (drive with coro_run) */ \
+            if (ch->capacity == 0) { \
+                /* Unbuffered rendezvous: wait for the slot, deposit, \
+                 * then wait until a receiver has taken the value */ \
+                while (ch->count == 1 && !ch->closed) { \
+                    _CYAN_CHANNEL_CORO_YIELD(); \
+                } \
+                if (ch->closed) { \
+                    _chan_##T##_unlock(ch); \
+                    return CHAN_CLOSED; \
+                } \
+                ch->buffer[0] = value; \
+                ch->count = 1; \
+                _CYAN_CHANNEL_MARK_PROGRESS(); \
+                while (ch->count == 1 && !ch->closed) { \
+                    _CYAN_CHANNEL_CORO_YIELD(); \
+                } \
+                if (ch->count == 1) { \
+                    /* Closed before any receiver took the value */ \
+                    ch->count = 0; \
+                    _chan_##T##_unlock(ch); \
+                    return CHAN_CLOSED; \
+                } \
+                _chan_##T##_unlock(ch); \
+                return CHAN_OK; \
+            } \
+            while (ch->count >= ch->capacity && !ch->closed) { \
+                _CYAN_CHANNEL_CORO_YIELD(); \
+            } \
+            if (ch->closed) { \
+                _chan_##T##_unlock(ch); \
+                return CHAN_CLOSED; \
             } \
             ch->buffer[ch->tail] = value; \
             ch->tail = (ch->tail + 1) % ch->capacity; \
             ch->count++; \
+            _CYAN_CHANNEL_MARK_PROGRESS(); \
             _chan_##T##_signal_recv(ch); \
             _chan_##T##_unlock(ch); \
             return CHAN_OK; \
@@ -350,10 +396,23 @@ typedef enum {
         _chan_##T##_lock(ch); \
         \
         if (!_CYAN_CHANNEL_CAN_BLOCK) { \
-            /* Single-threaded mode: return instead of spinning forever */ \
-            if (ch->count == 0) { \
-                _chan_##T##_unlock(ch); \
-                return None(T); \
+            if (!_CYAN_CHANNEL_IN_CORO()) { \
+                /* Single-threaded, not in a coroutine: return instead of \
+                 * spinning forever */ \
+                if (ch->count == 0) { \
+                    _chan_##T##_unlock(ch); \
+                    return None(T); \
+                } \
+            } else { \
+                /* Inside a coroutine: yield until a value arrives or the \
+                 * channel closes (drive with coro_run) */ \
+                while (ch->count == 0 && !ch->closed) { \
+                    _CYAN_CHANNEL_CORO_YIELD(); \
+                } \
+                if (ch->count == 0 && ch->closed) { \
+                    _chan_##T##_unlock(ch); \
+                    return None(T); \
+                } \
             } \
         } else { \
             /* Wait while buffer is empty and channel is open */ \
@@ -378,6 +437,7 @@ typedef enum {
             ch->head = (ch->head + 1) % ch->capacity; \
             ch->count--; \
         } \
+        _CYAN_CHANNEL_MARK_PROGRESS(); \
         \
         _chan_##T##_signal_send(ch); \
         _chan_##T##_unlock(ch); \
@@ -399,6 +459,27 @@ typedef enum {
         } \
         CYAN_FREE(ch); \
     }
+
+/*============================================================================
+ * Coroutine Integration
+ *============================================================================
+ * When coro.h is included BEFORE channel.h (cyan.h guarantees this order),
+ * blocking channel operations called from inside a coroutine cooperate:
+ * instead of returning CHAN_WOULD_BLOCK/None in single-threaded mode, they
+ * yield back to the resumer and retry when resumed — drive the coroutines
+ * with coro_run() for Go-style CSP. Outside a coroutine (or without
+ * coro.h), single-threaded behavior is unchanged.
+ */
+
+#if defined(CYAN_CORO_H)
+#define _CYAN_CHANNEL_IN_CORO() (coro_current() != NULL)
+#define _CYAN_CHANNEL_CORO_YIELD() coro_yield(coro_current())
+#define _CYAN_CHANNEL_MARK_PROGRESS() coro_mark_progress()
+#else
+#define _CYAN_CHANNEL_IN_CORO() 0
+#define _CYAN_CHANNEL_CORO_YIELD() ((void)0)
+#define _CYAN_CHANNEL_MARK_PROGRESS() ((void)0)
+#endif
 
 /*============================================================================
  * Thread Safety Macros

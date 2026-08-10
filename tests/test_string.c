@@ -13,6 +13,8 @@
  * - Property 53: string_eq is reflexive and matches strcmp semantics
  * - Property 54: string_split_next reconstructs the input
  * - Property 55: String macro == function behavioral equivalence
+ * - Property 56: string_from_slice materializes split pieces correctly
+ * - Property 57: string_slice_eq agrees with materialize + strcmp
  */
 
 #include <stdio.h>
@@ -734,6 +736,183 @@ static enum theft_trial_res prop_string_macro_fn_equivalence(struct theft *t, vo
 }
 
 /*============================================================================
+ * Property 56: string_from_slice materializes split pieces correctly
+ * For any string split on a random delimiter, each piece materialized via
+ * string_from_slice has the piece's exact content and length and is
+ * null-terminated. An empty or NULL-data slice yields an empty String.
+ *============================================================================*/
+
+static enum theft_trial_res prop_from_slice_materializes_pieces(struct theft *t, void *arg1) {
+    const char *input = (const char *)arg1;
+
+    /* Pick a random printable delimiter */
+    char delim = (char)(32 + theft_random_choice(t, 95));
+
+    String s = string_from(input);
+    size_t total_len = string_len(&s);
+
+    Slice_char rest = string_as_slice(&s);
+    Slice_char part;
+    size_t pieces_len_sum = 0;
+    size_t piece_count = 0;
+
+    while (string_split_next(&rest, delim, &part)) {
+        String piece = string_from_slice(part);
+
+        /* Length matches the slice */
+        if (string_len(&piece) != part.len) {
+            string_free(&piece);
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+
+        /* Content matches the slice bytes */
+        const char *cstr = string_cstr(&piece);
+        if (part.len > 0 && memcmp(cstr, part.data, part.len) != 0) {
+            string_free(&piece);
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+
+        /* Null-terminated at exactly len (pieces contain no delimiter and
+         * the generator produces no embedded NUL, so strlen must agree) */
+        if (cstr[part.len] != '\0' || strlen(cstr) != part.len) {
+            string_free(&piece);
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+
+        pieces_len_sum += part.len;
+        piece_count++;
+        string_free(&piece);
+    }
+
+    /* Pieces plus delimiters account for the whole input */
+    if (total_len > 0 || piece_count > 0) {
+        if (pieces_len_sum + (piece_count - 1) != total_len) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    string_free(&s);
+
+    /* An empty slice yields an empty String */
+    Slice_char empty_slice = { .data = NULL, .len = 0 };
+    String e1 = string_from_slice(empty_slice);
+    if (string_len(&e1) != 0 || strcmp(string_cstr(&e1), "") != 0) {
+        string_free(&e1);
+        return THEFT_TRIAL_FAIL;
+    }
+    string_free(&e1);
+
+    /* A zero-length slice with non-NULL data also yields an empty String */
+    char dummy = 'x';
+    Slice_char zero_slice = { .data = &dummy, .len = 0 };
+    String e2 = string_from_slice(zero_slice);
+    if (string_len(&e2) != 0 || strcmp(string_cstr(&e2), "") != 0) {
+        string_free(&e2);
+        return THEFT_TRIAL_FAIL;
+    }
+    string_free(&e2);
+
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 57: string_slice_eq agrees with materialize + strcmp
+ * For any random slice of a random string compared against a random C
+ * string, string_slice_eq agrees with materializing the slice and using
+ * strcmp. NULL cstr never matches; a length mismatch never matches.
+ *============================================================================*/
+
+static enum theft_trial_res prop_slice_eq_matches_strcmp(struct theft *t, void *arg1) {
+    const char *input = (const char *)arg1;
+
+    String s = string_from(input);
+    size_t len = string_len(&s);
+
+    /* Take a random sub-slice */
+    size_t start = theft_random_choice(t, len + 1);
+    size_t end = start + theft_random_choice(t, len - start + 1);
+    Slice_char slice = string_slice(&s, start, end);
+
+    /* The slice always equals its own materialization */
+    String mat = string_from_slice(slice);
+    if (!string_slice_eq(slice, string_cstr(&mat))) {
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Compare against a random C string: must agree with strcmp on the
+     * materialized copy */
+    char other[64];
+    size_t other_len = theft_random_choice(t, 8);
+    for (size_t i = 0; i < other_len; i++) {
+        /* Small alphabet so equal and unequal cases both occur */
+        other[i] = (char)('a' + theft_random_choice(t, 4));
+    }
+    other[other_len] = '\0';
+
+    bool expected = strcmp(string_cstr(&mat), other) == 0;
+    if (string_slice_eq(slice, other) != expected) {
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* NULL cstr never matches, even for an empty slice */
+    if (string_slice_eq(slice, NULL)) {
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    Slice_char empty_slice = { .data = NULL, .len = 0 };
+    if (string_slice_eq(empty_slice, NULL)) {
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Empty-vs-empty matches */
+    if (!string_slice_eq(empty_slice, "")) {
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* A length mismatch never matches: extend the materialized copy */
+    String longer = string_from(string_cstr(&mat));
+    string_push(&longer, '!');
+    if (string_slice_eq(slice, string_cstr(&longer))) {
+        string_free(&longer);
+        string_free(&mat);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+    /* And a truncated copy (when possible) never matches either */
+    if (slice.len > 0) {
+        String shorter = string_from_slice(slice);
+        shorter.len--;
+        shorter.data[shorter.len] = '\0';
+        if (string_slice_eq(slice, string_cstr(&shorter))) {
+            string_free(&shorter);
+            string_free(&longer);
+            string_free(&mat);
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+        string_free(&shorter);
+    }
+
+    string_free(&longer);
+    string_free(&mat);
+    string_free(&s);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -824,6 +1003,22 @@ static StringTest string_tests[] = {
     {
         "Property 55: String macro == function behavioral equivalence",
         prop_string_macro_fn_equivalence,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 56: string_from_slice materializes pieces */
+    {
+        "Property 56: string_from_slice materializes split pieces correctly",
+        prop_from_slice_materializes_pieces,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 57: string_slice_eq matches strcmp */
+    {
+        "Property 57: string_slice_eq agrees with materialize + strcmp",
+        prop_slice_eq_matches_strcmp,
         &string_gen_type_info,
         0,
         false

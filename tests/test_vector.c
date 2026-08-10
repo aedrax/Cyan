@@ -12,6 +12,9 @@
  * - Property 15: reserve never loses elements
  * - Property 16: clear resets length, vector remains usable
  * - Property 17: Vector macro == function behavioral equivalence
+ * - Property 18: find/contains agree with a naive linear scan
+ * - Property 19: sort produces a non-decreasing permutation of the input
+ * - Property 20: VEC_FOREACH visits exactly len elements in index order
  */
 
 #include <stdio.h>
@@ -551,6 +554,284 @@ static enum theft_trial_res prop_macro_fn_equivalence(struct theft *t, void *arg
 }
 
 /*============================================================================
+ * Property 18: find/contains agree with a naive linear scan
+ * For any vector of random ints and a random target value, vec_int_find
+ * returns the index of the first element equal to the target (or None),
+ * and vec_int_contains agrees; the macro forms behave identically.
+ *============================================================================*/
+
+/* Static target the predicate compares against (predicates take only the
+ * element, so the needle must travel through a global) */
+static int g_find_target;
+
+static bool _pred_equals_target(int x) {
+    return x == g_find_target;
+}
+
+static enum theft_trial_res prop_find_contains_naive(struct theft *t, void *arg1) {
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr);
+
+    Vec_int v = vec_int_new();
+
+    /* Small value range so hits and misses both occur */
+    size_t n = theft_random_choice(t, 41);
+    for (size_t i = 0; i < n; i++) {
+        vec_int_push(&v, seed % 5 + (int)theft_random_choice(t, 10));
+    }
+    g_find_target = seed % 5 + (int)theft_random_choice(t, 12);
+
+    /* Naive reference scan */
+    bool expect_found = false;
+    size_t expect_idx = 0;
+    for (size_t i = 0; i < v.len; i++) {
+        if (v.data[i] == g_find_target) {
+            expect_found = true;
+            expect_idx = i;
+            break;
+        }
+    }
+
+    Option_size_t found = vec_int_find(&v, _pred_equals_target);
+    if (found.has_value != expect_found) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (expect_found && found.value != expect_idx) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* contains agrees with find */
+    if (vec_int_contains(&v, _pred_equals_target) != expect_found) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Macro forms behave identically */
+    Option_size_t m_found = VEC_FIND(int, v, _pred_equals_target);
+    if (m_found.has_value != found.has_value ||
+        (m_found.has_value && m_found.value != found.value)) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (VEC_CONTAINS(int, v, _pred_equals_target) != expect_found) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* An empty vector never finds anything */
+    Vec_int empty = vec_int_new();
+    if (vec_int_find(&empty, _pred_equals_target).has_value ||
+        vec_int_contains(&empty, _pred_equals_target)) {
+        vec_int_free(&empty);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    vec_int_free(&empty);
+
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 19: sort produces a non-decreasing permutation of the input
+ * After vec_int_sort with an int comparator, elements are non-decreasing
+ * and form the same multiset as the input (verified by qsort on a copy).
+ *============================================================================*/
+
+static int _cmp_int_asc(const void *a, const void *b) {
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+
+static enum theft_trial_res prop_sort_nondecreasing_permutation(struct theft *t, void *arg1) {
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr);
+
+    Vec_int v = vec_int_new();
+
+    size_t n = theft_random_choice(t, 65);
+    int *copy = malloc((n > 0 ? n : 1) * sizeof(int));
+    if (!copy) return THEFT_TRIAL_ERROR;
+
+    for (size_t i = 0; i < n; i++) {
+        /* Narrow range guarantees duplicates */
+        int val = seed % 7 + (int)theft_random_choice(t, 16) - 8;
+        vec_int_push(&v, val);
+        copy[i] = val;
+    }
+
+    vec_int_sort(&v, _cmp_int_asc);
+
+    /* Length unchanged */
+    if (vec_int_len(&v) != n) {
+        free(copy);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Non-decreasing */
+    for (size_t i = 1; i < n; i++) {
+        if (v.data[i - 1] > v.data[i]) {
+            free(copy);
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* Same multiset: qsort the copy directly and compare byte-for-byte */
+    qsort(copy, n, sizeof(int), _cmp_int_asc);
+    if (n > 0 && memcmp(v.data, copy, n * sizeof(int)) != 0) {
+        free(copy);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Sorting again is a no-op (idempotence) */
+    vec_int_sort(&v, _cmp_int_asc);
+    if (n > 0 && memcmp(v.data, copy, n * sizeof(int)) != 0) {
+        free(copy);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* VEC_SORT macro behaves identically on a fresh copy of the input */
+    Vec_int v2 = vec_int_new();
+    for (size_t i = 0; i < n; i++) {
+        vec_int_push(&v2, copy[i]);
+    }
+    VEC_SORT(int, v2, _cmp_int_asc);
+    if (vec_int_len(&v2) != n ||
+        (n > 0 && memcmp(v2.data, copy, n * sizeof(int)) != 0)) {
+        vec_int_free(&v2);
+        free(copy);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    vec_int_free(&v2);
+
+    /* Sorting an empty vector is safe */
+    Vec_int empty = vec_int_new();
+    vec_int_sort(&empty, _cmp_int_asc);
+    if (vec_int_len(&empty) != 0) {
+        vec_int_free(&empty);
+        free(copy);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    vec_int_free(&empty);
+
+    free(copy);
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 20: VEC_FOREACH visits exactly len elements in index order
+ * The loop body runs once per element, in index order, with the iterator
+ * pointing at the element; an empty vector yields zero visits; break
+ * exits the loop early after the expected number of visits.
+ *============================================================================*/
+
+static enum theft_trial_res prop_foreach_visits_in_order(struct theft *t, void *arg1) {
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr);
+
+    Vec_int v = vec_int_new();
+
+    size_t n = theft_random_choice(t, 33);
+    for (size_t i = 0; i < n; i++) {
+        vec_int_push(&v, seed + (int)i * 3);
+    }
+
+    /* Collect visited values and pointers */
+    int visited[33];
+    size_t count = 0;
+    VEC_FOREACH(int, v, it) {
+        if (count >= n) {
+            /* More visits than elements */
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+        /* Iterator points at the element at the current index */
+        if (it != v.data + count) {
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+        visited[count++] = *it;
+    }
+
+    if (count != n) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (visited[i] != v.data[i]) {
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* continue skips the rest of the body but not elements */
+    size_t continue_count = 0;
+    VEC_FOREACH(int, v, it) {
+        if (*it % 2 == 0) continue;
+        continue_count++;
+    }
+    size_t odd_count = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (v.data[i] % 2 != 0) odd_count++;
+    }
+    if (continue_count != odd_count) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* break exits early after exactly k visits */
+    size_t k = theft_random_choice(t, n + 1);
+    size_t break_count = 0;
+    VEC_FOREACH(int, v, it) {
+        if (break_count == k) break;
+        break_count++;
+    }
+    if (break_count != (k < n ? k : n)) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* An empty (never-allocated, NULL-data) vector yields zero visits */
+    Vec_int empty = vec_int_new();
+    size_t empty_count = 0;
+    VEC_FOREACH(int, empty, it) {
+        (void)it;
+        empty_count++;
+    }
+    if (empty_count != 0) {
+        vec_int_free(&empty);
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    vec_int_free(&empty);
+
+    /* A cleared (allocated but len 0) vector also yields zero visits */
+    vec_int_clear(&v);
+    size_t cleared_count = 0;
+    VEC_FOREACH(int, v, it) {
+        (void)it;
+        cleared_count++;
+    }
+    if (cleared_count != 0) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
  * Test Registration
  *============================================================================*/
 
@@ -607,6 +888,21 @@ static VectorTest vector_tests[] = {
     {
         "Property 17: Vector macro == function behavioral equivalence",
         prop_macro_fn_equivalence,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 18: find/contains agree with a naive linear scan",
+        prop_find_contains_naive,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 19: sort produces a non-decreasing permutation of the input",
+        prop_sort_nondecreasing_permutation,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 20: VEC_FOREACH visits exactly len elements in index order",
+        prop_foreach_visits_in_order,
         THEFT_BUILTIN_int64_t
     },
 };

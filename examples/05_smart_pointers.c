@@ -199,6 +199,43 @@ i32 main(void) {
         WPTR_RELEASE(i32, w2);
     }
     
+    // Example 10: Putting it together - a cache entry with weak observers
+    printf("\n10. Putting It Together - Cache Entry with Weak Observers:\n");
+    {
+        // The cache owns the entry (the only strong reference)
+        SharedPtr_i32 cache_entry = shared_i32_new(31337);
+        printf("   cache stores entry %d (strong count: %zu)\n",
+               SPTR_DEREF(i32, cache_entry), SPTR_COUNT(i32, cache_entry));
+
+        // Observers watch the entry without keeping it alive
+        WeakPtr_i32 dashboard = weak_i32_from_shared(&cache_entry);
+        WeakPtr_i32 logger = WPTR_CLONE(i32, dashboard);   // second observer
+        printf("   two weak observers registered (strong count still %zu)\n",
+               SPTR_COUNT(i32, cache_entry));
+
+        // An observer reads by upgrading; the upgrade pins the entry briefly
+        Option_SharedPtr_i32 read = WPTR_UPGRADE(i32, dashboard);
+        if (read.has_value) {
+            printf("   dashboard reads %d (strong count during read: %zu)\n",
+                   SPTR_DEREF(i32, read.value), SPTR_COUNT(i32, read.value));
+            SPTR_RELEASE(i32, read.value);
+        }
+
+        // The cache evicts the entry: the strong count drops to zero
+        SPTR_RELEASE(i32, cache_entry);
+        printf("   cache evicted the entry\n");
+        printf("   dashboard expired: %s, logger expired: %s\n",
+               WPTR_IS_EXPIRED(i32, dashboard) ? "yes" : "no",
+               WPTR_IS_EXPIRED(i32, logger) ? "yes" : "no");
+
+        Option_SharedPtr_i32 stale = WPTR_UPGRADE(i32, logger);
+        printf("   logger upgrade after eviction: %s\n",
+               stale.has_value ? "Some" : "None");
+
+        WPTR_RELEASE(i32, dashboard);
+        WPTR_RELEASE(i32, logger);
+    }
+
     printf("\n=== Done ===\n");
     return 0;
 }

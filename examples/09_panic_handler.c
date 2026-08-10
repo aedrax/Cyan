@@ -167,6 +167,41 @@ void show_default_panic_info(void) {
 }
 
 /*============================================================================
+ * Non-Interactive Default Demo
+ *============================================================================*/
+
+/**
+ * @brief Panic-free counterparts of the menu scenarios
+ *
+ * Runs automatically when no menu selection arrives on stdin (e.g. when the
+ * example is executed from a script or CI). Each call below is the safe
+ * alternative to a panicking call from the menu, so the example always
+ * exercises the API and exits with status 0.
+ */
+void run_safe_alternatives_demo(void) {
+    printf("--- Non-interactive demo: panic-free alternatives ---\n\n");
+
+    /* Instead of unwrap() on None: unwrap_or supplies a default */
+    Option_i32 empty = None(i32);
+    printf("  unwrap_or(None, -1)   = %d (no panic)\n", unwrap_or(empty, -1));
+
+    /* expect() panics with a custom message on None, but is safe on Some */
+    Option_i32 present = Some(i32, 7);
+    printf("  expect(Some(7), msg)  = %d (only panics on None)\n",
+           expect(present, "value known to be present"));
+
+    /* Instead of unwrap_ok() on Err: unwrap_ok_or supplies a default */
+    Result_i32_const_charp failed = Err(i32, const_charp, "disk full");
+    printf("  unwrap_ok_or(Err, 0)  = %d (no panic)\n", unwrap_ok_or(failed, 0));
+
+    /* The error can still be inspected without panicking */
+    if (is_err(failed)) {
+        printf("  is_err + unwrap_err   = \"%s\"\n", unwrap_err(failed));
+    }
+    printf("\n");
+}
+
+/*============================================================================
  * Interactive Menu
  *============================================================================*/
 
@@ -198,11 +233,14 @@ i32 main(void) {
     /* Show the interactive menu */
     show_menu();
     
-    /* Read user selection */
+    /* Read user selection; with no usable stdin (EOF, empty, or non-numeric
+     * input) fall back to the non-interactive demo and exit successfully */
     i32 choice = 0;
     if (scanf("%d", &choice) != 1) {
-        printf("Invalid input. Exiting.\n");
-        return 1;
+        printf("no selection (stdin empty or not a number)\n\n");
+        run_safe_alternatives_demo();
+        printf("=== Done ===\n");
+        return 0;
     }
     
     /* Execute the selected panic scenario */

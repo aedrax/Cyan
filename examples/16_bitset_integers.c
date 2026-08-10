@@ -24,6 +24,14 @@ BITSET_DEFINE(4);  // Bitset_4: 4-bit bitset for permissions
 // Define named flags for file permissions
 FLAGS_DEFINE(FilePerms, READ, WRITE, EXECUTE, HIDDEN);
 
+// Saturating add built on the public u6 API: clamps at u6_max() (63)
+// instead of wrapping around to 0 (used in part 8)
+u6 u6_add_sat(u6 a, u6 b) {
+    u6 headroom = u6_sub(u6_max(), a);   // room left before 63
+    if (u6_lt(headroom, b)) return u6_max();
+    return u6_add(a, b);
+}
+
 int main(void) {
     printf("=== Bitsets and Custom Bit-Width Integers ===\n\n");
 
@@ -218,6 +226,42 @@ int main(void) {
     printf("   BS_ANY=%s, BS_NONE=%s\n",
            BS_ANY(8, vt_bs) ? "true" : "false",
            BS_NONE(8, vt_bs) ? "true" : "false");
+
+    // =========================================================================
+    // Part 8: Putting It Together - Permission Gate + Saturating Counter
+    // =========================================================================
+    printf("\n8. Putting It Together - Permission Gate + Saturating Counter:\n");
+
+    // An editor session needs READ and WRITE, and the file must not be HIDDEN
+    Bitset_4 session = bitset_4_new();
+    FLAGS_SET(4, session, FilePerms_READ);
+    FLAGS_SET(4, session, FilePerms_WRITE);
+
+    Bitset_4 required = bitset_4_new();
+    FLAGS_SET(4, required, FilePerms_READ);
+    FLAGS_SET(4, required, FilePerms_WRITE);
+
+    // The gate: (session AND required) == required, and HIDDEN clear
+    Bitset_4 granted = BS_INTERSECT(4, session, required);
+    bool can_edit = BS_EQ(4, granted, required)
+                 && !FLAGS_HAS(4, session, FilePerms_HIDDEN);
+    printf("   session may edit: %s\n", can_edit ? "yes" : "no");
+
+    FLAGS_CLEAR(4, session, FilePerms_WRITE);
+    granted = BS_INTERSECT(4, session, required);
+    can_edit = BS_EQ(4, granted, required)
+            && !FLAGS_HAS(4, session, FilePerms_HIDDEN);
+    printf("   after WRITE revoked, may edit: %s\n", can_edit ? "yes" : "no");
+
+    // A retry counter that saturates at u6_max() (63) instead of wrapping:
+    // compare with part 1, where 30 + 40 silently wrapped to 6
+    u6 retries = u6_new(58);
+    printf("   retry counter starts at %u (u6, max 63)\n", u6_get(&retries));
+    for (int i = 0; i < 3; i++) {
+        retries = u6_add_sat(retries, u6_new(4));
+        printf("   after +4: %u%s\n", u6_get(&retries),
+               u6_eq(retries, u6_max()) ? " (saturated, no wraparound)" : "");
+    }
 
     printf("\n=== Done ===\n");
     return 0;

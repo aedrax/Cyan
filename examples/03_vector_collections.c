@@ -26,6 +26,18 @@ typedef struct {
 OPTION_DEFINE(Point);
 VECTOR_DEFINE(Point);
 
+// --- Scoreboard helpers (used in example 8) ---
+// qsort-style comparator: a/b point at const i32, sort descending
+int cmp_i32_desc(const void *a, const void *b) {
+    i32 x = *(const i32 *)a;
+    i32 y = *(const i32 *)b;
+    return (x < y) - (x > y);
+}
+
+// Predicates for VEC_FIND / VEC_CONTAINS
+bool is_perfect_score(i32 s) { return s == 100; }
+bool below_forty(i32 s) { return s < 40; }
+
 i32 main(void) {
     printf("=== Vector Examples ===\n\n");
     
@@ -149,7 +161,46 @@ i32 main(void) {
     printf("\n");
 
     VEC_FREE(i32, demo);
-    
+
+    // Example 8: Putting it together - a top-N scoreboard
+    printf("\n8. Putting It Together - Top-N Scoreboard:\n");
+    Vec_i32 scores = vec_i32_new();
+    VEC_RESERVE(i32, scores, 16);                 // avoid regrowth up front
+
+    i32 first_round[] = {72, 100, 55, 89};
+    VEC_EXTEND(i32, scores, first_round, 4);      // bulk-load one round
+    VEC_PUSH(i32, scores, 91);                    // late submissions
+    VEC_PUSH(i32, scores, 38);
+
+    printf("   %zu scores submitted: ", VEC_LEN(i32, scores));
+    VEC_FOREACH(i32, scores, it) {
+        printf("%d ", *it);
+    }
+    printf("\n");
+
+    // Queries before ranking
+    printf("   any perfect score? %s\n",
+           VEC_CONTAINS(i32, scores, is_perfect_score) ? "yes" : "no");
+    Option_size_t failing = VEC_FIND(i32, scores, below_forty);
+    if (is_some(failing)) {
+        printf("   first score below 40 at index %zu\n", unwrap(failing));
+    }
+
+    // Rank: sort descending, then print the podium
+    VEC_SORT(i32, scores, cmp_i32_desc);
+    printf("   podium: ");
+    usize podium = VEC_LEN(i32, scores) < 3 ? VEC_LEN(i32, scores) : 3;
+    for (usize i = 0; i < podium; i++) {
+        printf("#%zu=%d ", i + 1, unwrap(VEC_GET(i32, scores, i)));
+    }
+    printf("\n");
+
+    // New season: clear keeps the allocation for reuse
+    VEC_CLEAR(i32, scores);
+    printf("   after VEC_CLEAR: len=%zu (capacity kept for next season)\n",
+           VEC_LEN(i32, scores));
+    VEC_FREE(i32, scores);
+
     // Cleanup
     vec_i32_free(&numbers);
     vec_f64_free(&values);

@@ -211,6 +211,42 @@
     } \
     \
     /** \
+     * @brief Find the first element satisfying a predicate \
+     * @param v Pointer to the vector \
+     * @param pred Predicate returning true for the wanted element \
+     * @return Option_size_t containing the index of the first match, or None \
+     */ \
+    CYAN_UNUSED static inline Option_size_t vec_##T##_find(Vec_##T *v, bool (*pred)(T)) { \
+        for (size_t i = 0; i < v->len; i++) { \
+            if (pred(v->data[i])) return Some(size_t, i); \
+        } \
+        return None(size_t); \
+    } \
+    \
+    /** \
+     * @brief Check whether any element satisfies a predicate \
+     * @param v Pointer to the vector \
+     * @param pred Predicate returning true for the wanted element \
+     * @return true if a matching element exists \
+     */ \
+    CYAN_UNUSED static inline bool vec_##T##_contains(Vec_##T *v, bool (*pred)(T)) { \
+        return vec_##T##_find(v, pred).has_value; \
+    } \
+    \
+    /** \
+     * @brief Sort the vector in place \
+     * @param v Pointer to the vector \
+     * @param cmp qsort-style comparator over element pointers: \
+     *            int cmp(const void *a, const void *b) where a/b are const T* \
+     */ \
+    CYAN_UNUSED static inline void vec_##T##_sort(Vec_##T *v, \
+                                                  int (*cmp)(const void *, const void *)) { \
+        if (v->len > 1) { \
+            qsort(v->data, v->len, sizeof(T), cmp); \
+        } \
+    } \
+    \
+    /** \
      * @brief Get the current number of elements \
      * @param v Pointer to the vector \
      * @return Current length \
@@ -320,5 +356,49 @@
  * @param v The vector (an lvalue, not a pointer)
  */
 #define VEC_FREE(T, v) vec_##T##_free(&(v))
+
+/**
+ * @brief Find the first element satisfying a predicate
+ * @param T The element type
+ * @param v The vector (an lvalue, not a pointer)
+ * @param pred Predicate function (bool (*)(T))
+ * @return Option_size_t index of first match, or None
+ */
+#define VEC_FIND(T, v, pred) vec_##T##_find(&(v), (pred))
+
+/**
+ * @brief Check whether any element satisfies a predicate
+ * @param T The element type
+ * @param v The vector (an lvalue, not a pointer)
+ * @param pred Predicate function (bool (*)(T))
+ * @return true if a matching element exists
+ */
+#define VEC_CONTAINS(T, v, pred) vec_##T##_contains(&(v), (pred))
+
+/**
+ * @brief Sort the vector in place
+ * @param T The element type
+ * @param v The vector (an lvalue, not a pointer)
+ * @param cmp qsort-style comparator (a/b point at const T)
+ */
+#define VEC_SORT(T, v, cmp) vec_##T##_sort(&(v), (cmp))
+
+/**
+ * @brief Iterate over the vector's elements by pointer
+ * @param T The element type
+ * @param v The vector (an lvalue; must not be resized during iteration)
+ * @param it Name for the T* iteration variable
+ *
+ * break and continue behave like a normal for loop.
+ *
+ * Example:
+ *   VEC_FOREACH(int, v, it) {
+ *       printf("%d\n", *it);
+ *   }
+ */
+#define VEC_FOREACH(T, v, it) \
+    for (T *it = (v).data, \
+           *CYAN_UNIQUE(_cyan_vend) = (v).data ? (v).data + (v).len : NULL; \
+         it != CYAN_UNIQUE(_cyan_vend); it++)
 
 #endif /* CYAN_VECTOR_H */

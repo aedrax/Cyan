@@ -124,6 +124,43 @@ int main(void) {
     printf("   Channel freed via CHAN_FREE\n\n");
     
     /* --------------------------------------------------------
+     * 8. Putting it together: a bounded work queue
+     * -------------------------------------------------------- */
+    printf("8. Putting it together: a bounded work queue\n");
+
+    /* A buffered channel is a bounded FIFO queue: producers stop enqueueing
+     * when it is full, and jobs drain strictly in submission order. */
+    Channel_int *queue = chan_int_new(4);
+
+    int next_job = 1;
+    int enqueued = 0;
+    while (chan_int_try_send(queue, next_job) == CHAN_OK) {
+        printf("   enqueued job #%d\n", next_job);
+        next_job++;
+        enqueued++;
+    }
+    printf("   queue full after %d jobs (capacity 4), producer backs off\n", enqueued);
+
+    /* The worker drains two jobs, freeing capacity ... */
+    printf("   worker: processing job #%d\n", unwrap(chan_int_recv(queue)));
+    printf("   worker: processing job #%d\n", unwrap(chan_int_recv(queue)));
+
+    /* ... so the producer can enqueue again, then signals shutdown */
+    chan_int_send(queue, next_job);
+    printf("   enqueued job #%d after capacity freed up\n", next_job);
+    chan_int_close(queue);
+    printf("   producer closed the queue\n");
+
+    /* The worker drains the remaining jobs in FIFO order, then sees None */
+    Option_int job;
+    while (is_some(job = chan_int_recv(queue))) {
+        printf("   worker: processing job #%d\n", unwrap(job));
+    }
+    printf("   queue closed and drained - worker exits\n\n");
+
+    chan_int_free(queue);
+
+    /* --------------------------------------------------------
      * Cleanup
      * -------------------------------------------------------- */
     chan_int_free(ch);

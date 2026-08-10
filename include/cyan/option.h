@@ -95,6 +95,15 @@
 #define None(T) ((Option_##T){ .has_value = false })
 
 /*============================================================================
+ * Common Instances
+ *============================================================================*/
+
+/* Option_size_t is used across the library for indices and lengths
+ * (string_find, vec_T_find, ...), so it is defined here once.
+ * Do not OPTION_DEFINE(size_t) in user code. */
+OPTION_DEFINE(size_t);
+
+/*============================================================================
  * Core Macros (always available)
  *============================================================================
  * These are type-generic via member access and evaluate each argument

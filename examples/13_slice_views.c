@@ -166,6 +166,37 @@ int main(void) {
            unwrap(slice_int_get(view, 2)));
     printf("   (Slice reflects the change - it's a view, not a copy)\n\n");
     
-    printf("=== Slice example complete ===\n");
+    /* --------------------------------------------------------
+     * 8. Putting it together: a zero-copy tokenizer
+     * -------------------------------------------------------- */
+    printf("8. Putting it together: a zero-copy tokenizer\n");
+
+    /* A command line in static storage - never copied, never modified */
+    static const char command[] = "set brightness 80 --no-fade";
+
+    /* View the buffer as a char slice (Slice_char comes from string.h) */
+    Slice_char input = { .data = (char *)command, .len = sizeof(command) - 1 };
+    printf("   input: \"%s\" (%zu bytes, tokenized in place)\n",
+           command, slice_char_len(input));
+
+    /* Every token is a subslice of the original buffer: zero allocations */
+    Slice_char rest = input;
+    Slice_char token;
+    int t = 0;
+    while (string_split_next(&rest, ' ', &token)) {
+        printf("   token %d: \"", t++);
+        for (size_t i = 0; i < slice_char_len(token); i++) {
+            printf("%c", unwrap(slice_char_get(token, i)));
+        }
+        printf("\" (offset %td, len %zu)\n",
+               (ptrdiff_t)(token.data - command), slice_char_len(token));
+
+        /* Tokens can be compared without materializing them */
+        if (string_slice_eq(token, "--no-fade")) {
+            printf("            ^ recognized flag via string_slice_eq\n");
+        }
+    }
+
+    printf("\n=== Slice example complete ===\n");
     return 0;
 }

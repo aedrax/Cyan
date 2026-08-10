@@ -116,6 +116,29 @@ int main(void) {
     }
     printf("\n");
     
+    // Example 8: Putting it together - parsing a binary-ish record
+    // A sensor packet laid out as: [u8 id][u8 flags][u16 reading][u32 timestamp]
+    // Fixed-width types make the layout and the shifts unambiguous.
+    printf("\n8. Putting It Together - Parsing a Binary Record:\n");
+    u8 packet[] = {0x2A, 0x03, 0x01, 0x90, 0x65, 0x1A, 0x2B, 0x3C};
+
+    u8  sensor_id = packet[0];
+    u8  flags     = packet[1];
+    u16 reading   = (u16)(((u16)packet[2] << 8) | packet[3]);          // big-endian
+    u32 timestamp = ((u32)packet[4] << 24) | ((u32)packet[5] << 16)
+                  | ((u32)packet[6] << 8)  | (u32)packet[7];
+
+    printf("   raw bytes:  ");
+    for (usize i = 0; i < sizeof(packet); i++) {
+        printf("%02X ", packet[i]);
+    }
+    printf("\n");
+    printf("   sensor id:  %u\n", sensor_id);
+    printf("   flags:      0x%02X (active=%s, calibrated=%s)\n", flags,
+           (flags & 0x01) ? "yes" : "no", (flags & 0x02) ? "yes" : "no");
+    printf("   reading:    %u raw -> %.1f degrees (scaled /10)\n", reading, reading / 10.0);
+    printf("   timestamp:  %u\n", timestamp);
+
     printf("\n=== Done ===\n");
     return 0;
 }

@@ -40,6 +40,29 @@ void resource_destroy(Resource *r) {
     }
 }
 
+// --- Resource pyramid with early returns (used in example 6) ---
+// Acquire three resources in order; any failure returns early, and defer
+// unwinds exactly the resources acquired so far, in LIFO order.
+i32 start_service(bool fail_network) {
+    Resource *db = resource_create(10, "Database");
+    if (!db) return -1;
+    defer({ resource_destroy(db); });
+
+    Resource *net = fail_network ? NULL : resource_create(11, "Network");
+    if (!net) {
+        printf("   [Network unavailable - aborting startup]\n");
+        return -1;  // db is still destroyed by its defer
+    }
+    defer({ resource_destroy(net); });
+
+    Resource *cache = resource_create(12, "Cache");
+    if (!cache) return -1;  // net and db unwound automatically
+    defer({ resource_destroy(cache); });
+
+    printf("   Service running with all three resources\n");
+    return 0;  // cache, net, db destroyed in that order
+}
+
 i32 main(void) {
     printf("=== Defer Examples ===\n\n");
     
@@ -110,6 +133,17 @@ i32 main(void) {
         printf("   Back in outer scope\n");
     }
     
+    // Example 6: Putting it together - resource pyramid with early returns
+    printf("\n6. Putting It Together - Resource Pyramid:\n");
+    printf("   -- successful startup --\n");
+    i32 rc_ok = start_service(false);
+    printf("   start_service returned %d\n", rc_ok);
+
+    printf("   -- startup with network failure --\n");
+    i32 rc_fail = start_service(true);
+    printf("   start_service returned %d (only acquired resources were cleaned up)\n",
+           rc_fail);
+
     printf("\n=== Done ===\n");
     return 0;
 }

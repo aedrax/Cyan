@@ -90,6 +90,45 @@ struct Coro {
 };
 
 /*============================================================================
+ * Current-Coroutine Tracking
+ *============================================================================
+ * The library tracks which coroutine is currently executing so that
+ * cooperating primitives (channels in single-threaded mode) can yield
+ * instead of failing with WOULD_BLOCK when called from inside a coroutine.
+ *
+ * Note: these are per-translation-unit statics (header-only tradeoff).
+ * Coroutines, their channels, and coro_run() must live in the same
+ * translation unit for the integration to compose.
+ */
+
+/** @brief The coroutine currently executing in this TU (NULL outside coros) */
+static Coro *_cyan_coro_current = NULL;
+
+/** @brief Set by channels (or coro_mark_progress) when a blocked operation
+ *  completes; coro_run uses it to distinguish waiting from deadlock */
+static bool _cyan_coro_progress = false;
+
+/**
+ * @brief Get the currently executing coroutine
+ * @return The running Coro, or NULL when called outside any coroutine
+ */
+static inline Coro *coro_current(void) {
+    return _cyan_coro_current;
+}
+
+/**
+ * @brief Mark that a blocked coroutine's condition made progress
+ *
+ * Channel operations call this automatically. Call it manually from a
+ * coroutine that legitimately yields many times without channel traffic
+ * (e.g. an incremental computation) so coro_run does not mistake the
+ * quiet passes for deadlock.
+ */
+static inline void coro_mark_progress(void) {
+    _cyan_coro_progress = true;
+}
+
+/*============================================================================
  * Internal Functions
  *============================================================================*/
 
@@ -247,10 +286,16 @@ static inline bool coro_resume(Coro *c) {
         CYAN_PANIC("coro_resume: coroutine already running");
         return false;
     }
-    
+
+    /* Track the running coroutine (restore on return: nesting-safe) */
+    Coro *prev = _cyan_coro_current;
+    _cyan_coro_current = c;
+
     /* Save caller context and switch to coroutine */
     swapcontext(&c->caller_ctx, &c->coro_ctx);
-    
+
+    _cyan_coro_current = prev;
+
     return c->status != CORO_FINISHED;
 }
 
@@ -365,6 +410,55 @@ static inline void coro_free(Coro *c) {
         }
         CYAN_FREE(c->yield_heap);
         CYAN_FREE(c);
+    }
+}
+
+/*============================================================================
+ * Scheduler
+ *============================================================================*/
+
+/**
+ * @brief Run a group of coroutines round-robin until all finish
+ * @param coros Array of coroutine pointers (NULL entries are skipped)
+ * @param n Number of entries in coros
+ * @return true when every coroutine finished; false on deadlock
+ *
+ * Repeatedly resumes each unfinished coroutine in order. Together with
+ * channels (in single-threaded mode), this gives Go-style CSP: a channel
+ * operation inside a coroutine that would block yields back here, and is
+ * retried on the next pass.
+ *
+ * Deadlock detection: if a complete pass resumes coroutines but none
+ * finishes and no channel transfer happens (see coro_mark_progress),
+ * the remaining coroutines can never proceed and coro_run returns false.
+ *
+ * Example:
+ *   Coro *cs[] = { coro_new(producer, ch, 0), coro_new(consumer, ch, 0) };
+ *   bool ok = coro_run(cs, 2);
+ *   coro_free(cs[0]); coro_free(cs[1]);
+ */
+static inline bool coro_run(Coro **coros, size_t n) {
+    for (;;) {
+        bool any_active = false;
+        bool finished_this_pass = false;
+        _cyan_coro_progress = false;
+
+        for (size_t i = 0; i < n; i++) {
+            Coro *c = coros[i];
+            if (!c || c->status == CORO_FINISHED) continue;
+            any_active = true;
+            coro_resume(c);
+            if (c->status == CORO_FINISHED) {
+                finished_this_pass = true;
+            }
+        }
+
+        if (!any_active) return true;
+        if (!finished_this_pass && !_cyan_coro_progress) {
+            /* Every remaining coroutine yielded without any progress:
+             * nothing can unblock them */
+            return false;
+        }
     }
 }
 
