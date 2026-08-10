@@ -95,41 +95,60 @@ i32 main(void) {
     }
     printf("\n");
     
-    // Example 6: Vtable Method-Style API
-    printf("\n6. Vtable Method-Style API:\n");
-    Vec_i32 vt_demo = vec_i32_new();
-    
-    // Direct vtable access
-    printf("   Direct vtable access:\n");
-    vt_demo.vt->push(&vt_demo, 100);
-    vt_demo.vt->push(&vt_demo, 200);
-    vt_demo.vt->push(&vt_demo, 300);
-    printf("      vt_demo.vt->push(&vt_demo, 100/200/300)\n");
-    printf("      vt_demo.vt->len(&vt_demo) = %zu\n", vt_demo.vt->len(&vt_demo));
-    Option_i32 vt_elem = vt_demo.vt->get(&vt_demo, 1);
-    printf("      vt_demo.vt->get(&vt_demo, 1) = %d\n", is_some(vt_elem) ? unwrap(vt_elem) : -1);
-    
-    // Convenience macros (cleaner syntax)
-    printf("   Convenience macros:\n");
-    VEC_PUSH(vt_demo, 400);
-    printf("      VEC_PUSH(vt_demo, 400)\n");
-    printf("      VEC_LEN(vt_demo) = %zu\n", VEC_LEN(vt_demo));
-    Option_i32 macro_elem = VEC_GET(vt_demo, 2);
-    printf("      VEC_GET(vt_demo, 2) = %d\n", is_some(macro_elem) ? unwrap(macro_elem) : -1);
-    
+    // Example 6: Insert and Remove at Arbitrary Indices
+    printf("\n6. Insert and Remove:\n");
+    Vec_i32 seq = vec_i32_new();
+    vec_i32_push(&seq, 10);
+    vec_i32_push(&seq, 30);
+    vec_i32_push(&seq, 40);
+
+    // Insert 20 between 10 and 30
+    vec_i32_insert(&seq, 1, 20);
+    printf("   After insert(1, 20): ");
+    for (usize i = 0; i < vec_i32_len(&seq); i++) {
+        printf("%d ", unwrap(vec_i32_get(&seq, i)));
+    }
+    printf("\n");
+
+    // Remove the element at index 2 (returns the removed value)
+    Option_i32 taken = vec_i32_remove(&seq, 2);
+    printf("   remove(2) returned: %d\n", is_some(taken) ? unwrap(taken) : -1);
+    printf("   After remove(2): ");
+    for (usize i = 0; i < vec_i32_len(&seq); i++) {
+        printf("%d ", unwrap(vec_i32_get(&seq, i)));
+    }
+    printf("\n");
+
+    vec_i32_free(&seq);
+
+    // Example 7: Type-First Convenience Macros
+    printf("\n7. Type-First Convenience Macros:\n");
+    Vec_i32 demo = vec_i32_new();
+
+    // Macros take the element type first, then the vector
+    VEC_PUSH(i32, demo, 100);
+    VEC_PUSH(i32, demo, 200);
+    VEC_PUSH(i32, demo, 300);
+    printf("      VEC_PUSH(i32, demo, 100/200/300)\n");
+    printf("      VEC_LEN(i32, demo) = %zu\n", VEC_LEN(i32, demo));
+    Option_i32 macro_elem = VEC_GET(i32, demo, 2);
+    printf("      VEC_GET(i32, demo, 2) = %d\n", is_some(macro_elem) ? unwrap(macro_elem) : -1);
+
+    // Insert and remove via macros
+    VEC_INSERT(i32, demo, 0, 50);
+    printf("      VEC_INSERT(i32, demo, 0, 50): len = %zu\n", VEC_LEN(i32, demo));
+    Option_i32 removed = VEC_REMOVE(i32, demo, 0);
+    printf("      VEC_REMOVE(i32, demo, 0) = %d\n", is_some(removed) ? unwrap(removed) : -1);
+
     // Pop using convenience macro
     printf("   Popping with VEC_POP: ");
     Option_i32 pop_val;
-    while (is_some(pop_val = VEC_POP(vt_demo))) {
+    while (is_some(pop_val = VEC_POP(i32, demo))) {
         printf("%d ", unwrap(pop_val));
     }
     printf("\n");
-    
-    // All Vec_i32 instances share the same vtable
-    printf("   Shared vtable (memory efficient):\n");
-    printf("      numbers.vt == vt_demo.vt: %s\n", numbers.vt == vt_demo.vt ? "yes" : "no");
-    
-    VEC_FREE(vt_demo);
+
+    VEC_FREE(i32, demo);
     
     // Cleanup
     vec_i32_free(&numbers);

@@ -53,7 +53,7 @@
 #define match_option(opt, T, var, some_branch, none_branch) \
     if (1) { \
         Option_##T CYAN_UNIQUE(_opt_val_) = (opt); \
-        if (is_some(CYAN_UNIQUE(_opt_val_))) { \
+        if (OPT_IS_SOME(CYAN_UNIQUE(_opt_val_))) { \
             T var = CYAN_UNIQUE(_opt_val_).value; \
             (void)var; \
             some_branch \
@@ -79,7 +79,7 @@
     __extension__ ({ \
         Option_##T CYAN_UNIQUE(_opt_val_) = (opt); \
         T_out CYAN_UNIQUE(_result_); \
-        if (is_some(CYAN_UNIQUE(_opt_val_))) { \
+        if (OPT_IS_SOME(CYAN_UNIQUE(_opt_val_))) { \
             T var = CYAN_UNIQUE(_opt_val_).value; \
             (void)var; \
             CYAN_UNIQUE(_result_) = (T_out)(some_expr); \
@@ -119,7 +119,7 @@
 #define match_result(res, T, E, ok_var, err_var, ok_branch, err_branch) \
     if (1) { \
         Result_##T##_##E CYAN_UNIQUE(_res_val_) = (res); \
-        if (is_ok(CYAN_UNIQUE(_res_val_))) { \
+        if (RES_IS_OK(CYAN_UNIQUE(_res_val_))) { \
             T ok_var = CYAN_UNIQUE(_res_val_).ok_value; \
             (void)ok_var; \
             ok_branch \
@@ -149,7 +149,7 @@
     __extension__ ({ \
         Result_##T##_##E CYAN_UNIQUE(_res_val_) = (res); \
         T_out CYAN_UNIQUE(_result_); \
-        if (is_ok(CYAN_UNIQUE(_res_val_))) { \
+        if (RES_IS_OK(CYAN_UNIQUE(_res_val_))) { \
             T ok_var = CYAN_UNIQUE(_res_val_).ok_value; \
             (void)ok_var; \
             CYAN_UNIQUE(_result_) = (T_out)(ok_expr); \
@@ -160,21 +160,5 @@
         } \
         CYAN_UNIQUE(_result_); \
     })
-
-/*============================================================================
- * Helper Macros (for more Rust-like syntax)
- *============================================================================*/
-
-/**
- * @brief Helper to create a Some pattern in match context
- * This is syntactic sugar for documentation purposes.
- * 
- * Note: These helpers are provided for documentation and readability.
- * The actual pattern matching is done by match_option/match_result macros.
- */
-#define some(var) var
-#define none() /* empty - no binding needed */
-#define ok(var) var
-#define err(var) var
 
 #endif /* CYAN_MATCH_H */

@@ -29,6 +29,14 @@ f64 i32_to_f64(i32 x) {
     return (f64)x;
 }
 
+// Chainable fallible transformation: reciprocal fails for zero
+Option_f64 safe_reciprocal(i32 x) {
+    if (x == 0) {
+        return None(f64);
+    }
+    return Some(f64, 1.0 / (f64)x);
+}
+
 i32 main(void) {
     printf("=== Option Type Examples ===\n\n");
     
@@ -82,28 +90,35 @@ i32 main(void) {
     Option_f64 mapped_empty = map_option(empty, f64, i32_to_f64);
     printf("   Mapping None: %s\n", is_none(mapped_empty) ? "None" : "Some");
     
-    // Example 6: Vtable Method-Style API
-    printf("\n6. Vtable Method-Style API:\n");
-    Option_i32 opt_vt = Some(i32, 99);
-    Option_i32 none_vt = None(i32);
-    
-    // Direct vtable access
-    printf("   Direct vtable access:\n");
-    printf("      opt_vt.vt->opt_is_some(&opt_vt) = %s\n", opt_vt.vt->opt_is_some(&opt_vt) ? "yes" : "no");
-    printf("      opt_vt.vt->opt_unwrap(&opt_vt) = %d\n", opt_vt.vt->opt_unwrap(&opt_vt));
-    printf("      none_vt.vt->opt_unwrap_or(&none_vt, -1) = %d\n", none_vt.vt->opt_unwrap_or(&none_vt, -1));
-    
-    // Convenience macros (cleaner syntax)
+    // Example 6: Two Equivalent Call Styles
+    printf("\n6. Two Equivalent Call Styles:\n");
+    Option_i32 opt = Some(i32, 99);
+    Option_i32 none_opt = None(i32);
+
+    // Style 1: Standalone per-type functions
+    printf("   Standalone functions:\n");
+    printf("      option_i32_is_some(&opt) = %s\n", option_i32_is_some(&opt) ? "yes" : "no");
+    printf("      option_i32_unwrap(&opt) = %d\n", option_i32_unwrap(&opt));
+    printf("      option_i32_unwrap_or(&none_opt, -1) = %d\n", option_i32_unwrap_or(&none_opt, -1));
+
+    // Style 2: Convenience macros (cleaner syntax)
     printf("   Convenience macros:\n");
-    printf("      OPT_IS_SOME(opt_vt) = %s\n", OPT_IS_SOME(opt_vt) ? "yes" : "no");
-    printf("      OPT_IS_NONE(none_vt) = %s\n", OPT_IS_NONE(none_vt) ? "yes" : "no");
-    printf("      OPT_UNWRAP(opt_vt) = %d\n", OPT_UNWRAP(opt_vt));
-    printf("      OPT_UNWRAP_OR(none_vt, -1) = %d\n", OPT_UNWRAP_OR(none_vt, -1));
-    
-    // All Option_i32 instances share the same vtable
-    printf("   Shared vtable (memory efficient):\n");
-    printf("      some_val.vt == opt_vt.vt: %s\n", some_val.vt == opt_vt.vt ? "yes" : "no");
-    
+    printf("      OPT_IS_SOME(opt) = %s\n", OPT_IS_SOME(opt) ? "yes" : "no");
+    printf("      OPT_IS_NONE(none_opt) = %s\n", OPT_IS_NONE(none_opt) ? "yes" : "no");
+    printf("      OPT_UNWRAP(opt) = %d\n", OPT_UNWRAP(opt));
+    printf("      OPT_UNWRAP_OR(none_opt, -1) = %d\n", OPT_UNWRAP_OR(none_opt, -1));
+
+    // Example 7: Chaining with and_then
+    printf("\n7. Chaining with and_then:\n");
+    Option_i32 ten = Some(i32, 10);
+    Option_f64 recip = and_then(ten, f64, safe_reciprocal);
+    printf("   and_then(Some(10), f64, safe_reciprocal) = Some(%.2f)\n", unwrap(recip));
+
+    Option_i32 zero = Some(i32, 0);
+    Option_f64 no_recip = and_then(zero, f64, safe_reciprocal);
+    printf("   and_then(Some(0), f64, safe_reciprocal) = %s\n",
+           is_none(no_recip) ? "None" : "Some");
+
     printf("\n=== Done ===\n");
     return 0;
 }

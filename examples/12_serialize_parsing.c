@@ -178,17 +178,48 @@ int main(void) {
     free(g3);
     
     /* --------------------------------------------------------
-     * 9. Pretty printing
+     * 9. S-expression trees (parse, walk, serialize, pretty print)
      * -------------------------------------------------------- */
-    printf("9. Pretty printing S-expressions\n");
-    
+    printf("9. S-expression trees\n");
+
     const char *sexpr = "(1 2 (3 4) 5)";
-    char *pretty = pretty_print(sexpr, 2);
-    
     printf("   Input: %s\n", sexpr);
-    printf("   Pretty printed:\n%s\n\n", pretty);
-    
-    free(pretty);
+
+    /* Parse the literal into an SExp tree */
+    Result_SExpPtr_ParseError parsed_sexp = parse_sexp(sexpr, NULL);
+    if (is_ok(parsed_sexp)) {
+        SExp *tree = unwrap_ok(parsed_sexp);
+
+        /* Walk the tree: the top level is a list of 4 items */
+        printf("   Top-level list length: %zu\n", tree->list.len);
+        printf("   First atom: %ld\n", tree->list.items[0]->i);
+        SExp *nested = tree->list.items[2];
+        printf("   Nested list length: %zu (first nested atom: %ld)\n",
+               nested->list.len, nested->list.items[0]->i);
+
+        /* Serialize the tree back to text */
+        char *round = serialize_sexp(tree);
+        printf("   Serialized back: %s\n", round);
+
+        /* Round-trip: parse(serialize(x)) is structurally equal to x */
+        Result_SExpPtr_ParseError reparsed = parse_sexp(round, NULL);
+        if (is_ok(reparsed)) {
+            SExp *tree2 = unwrap_ok(reparsed);
+            printf("   Round-trip sexp_eq: %s\n",
+                   sexp_eq(tree, tree2) ? "true" : "false");
+            sexp_free(tree2);
+        }
+
+        /* Pretty print the serialized form */
+        char *pretty = pretty_print(round, 2);
+        printf("   Pretty printed:\n%s\n\n", pretty);
+
+        free(pretty);
+        free(round);
+        sexp_free(tree);
+    } else {
+        printf("   Parse error: %s\n\n", unwrap_err(parsed_sexp));
+    }
     
     printf("=== Serialization example complete ===\n");
     return 0;

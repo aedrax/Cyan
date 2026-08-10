@@ -1,17 +1,17 @@
 /**
  * @file string.h
  * @brief Dynamic string type for safe text manipulation
- * 
+ *
  * This header provides a heap-allocated, growable string type with safe
  * operations that handle buffer sizing automatically. It avoids common
  * pitfalls of C strings like buffer overflows and null-terminator issues.
- * 
+ *
  * Usage:
  *   String s = string_from("Hello");
  *   string_append(&s, " World");
  *   printf("%s\n", string_cstr(&s));  // "Hello World"
  *   string_free(&s);
- * 
+ *
  * Or with auto-cleanup:
  *   string_auto(s, string_from("Hello"));
  *   // s is automatically freed when scope exits
@@ -26,6 +26,7 @@
 #include "slice.h"
 #include <string.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 /*============================================================================
  * Type Definitions
@@ -34,47 +35,28 @@
 /* Define Option_char for string_get return type */
 OPTION_DEFINE(char);
 
+/* Define Option_size_t for string_find return type */
+OPTION_DEFINE(size_t);
+
 /* Define Vec_char for slice_from_vec compatibility */
 VECTOR_DEFINE(char);
 
 /* Define Slice_char for string slicing */
 SLICE_DEFINE(char);
 
-/* Forward declare String for use in vtable */
-typedef struct String String;
-
-/**
- * @brief Vtable structure for String containing function pointers
- */
-typedef struct {
-    void (*push)(String *s, char c);
-    void (*append)(String *s, const char *cstr);
-    void (*clear)(String *s);
-    Option_char (*get)(const String *s, size_t idx);
-    size_t (*len)(const String *s);
-    const char *(*cstr)(const String *s);
-    Slice_char (*slice)(const String *s, size_t start, size_t end);
-    void (*free)(String *s);
-} StringVT;
-
 /**
  * @brief Dynamic string type
- * 
+ *
  * A heap-allocated, growable string with:
  * - data: null-terminated character buffer
  * - len: length excluding null terminator
  * - cap: capacity including null terminator
- * - vt: pointer to shared vtable
  */
-struct String {
+typedef struct {
     char *data;      /* Null-terminated buffer */
     size_t len;      /* Length excluding null terminator */
     size_t cap;      /* Capacity including null terminator */
-    const StringVT *vt;  /* Pointer to shared vtable */
-};
-
-/* Forward declare vtable instance */
-static const StringVT _string_vt;
+} String;
 
 /*============================================================================
  * Constructors
@@ -85,7 +67,7 @@ static const StringVT _string_vt;
  * @return A new empty String
  */
 static inline String string_new(void) {
-    return (String){ .data = NULL, .len = 0, .cap = 0, .vt = &_string_vt };
+    return (String){ .data = NULL, .len = 0, .cap = 0 };
 }
 
 /**
@@ -100,10 +82,10 @@ static inline String string_from(const char *cstr) {
     }
     size_t len = strlen(cstr);
     size_t cap = len + 1;
-    char *data = (char *)malloc(cap);
+    char *data = (char *)CYAN_MALLOC(cap);
     if (!data) CYAN_PANIC("allocation failed");
     memcpy(data, cstr, cap);  /* Includes null terminator */
-    return (String){ .data = data, .len = len, .cap = cap, .vt = &_string_vt };
+    return (String){ .data = data, .len = len, .cap = cap };
 }
 
 /**
@@ -118,10 +100,10 @@ static inline String string_with_capacity(size_t cap) {
     }
     if (cap == SIZE_MAX) CYAN_PANIC("string capacity overflow");
     size_t actual_cap = cap + 1;  /* +1 for null terminator */
-    char *data = (char *)malloc(actual_cap);
+    char *data = (char *)CYAN_MALLOC(actual_cap);
     if (!data) CYAN_PANIC("allocation failed");
     data[0] = '\0';
-    return (String){ .data = data, .len = 0, .cap = actual_cap, .vt = &_string_vt };
+    return (String){ .data = data, .len = 0, .cap = actual_cap };
 }
 
 /*============================================================================
@@ -148,7 +130,7 @@ static inline void _string_check_capacity(String *s, size_t additional) {
         new_cap *= CYAN_GROWTH_FACTOR;
     }
 
-    char *new_data = (char *)realloc(s->data, new_cap);
+    char *new_data = (char *)CYAN_REALLOC(s->data, new_cap);
     if (!new_data) CYAN_PANIC("allocation failed");
     s->data = new_data;
     s->cap = new_cap;
@@ -251,14 +233,14 @@ static inline void string_format(String *s, const char *fmt, ...) {
      * s->data (e.g. string_format(&s, "%s", string_cstr(&s))), which growing
      * the buffer would invalidate, and vsnprintf must not read its output
      * region. */
-    char *tmp = (char *)malloc((size_t)needed + 1);
+    char *tmp = (char *)CYAN_MALLOC((size_t)needed + 1);
     if (!tmp) CYAN_PANIC("allocation failed");
     vsnprintf(tmp, (size_t)needed + 1, fmt, args_copy);
     va_end(args_copy);
 
     _string_check_capacity(s, (size_t)needed);
     memcpy(s->data + s->len, tmp, (size_t)needed + 1);
-    free(tmp);
+    CYAN_FREE(tmp);
 
     s->len += (size_t)needed;
 }
@@ -273,20 +255,20 @@ static inline String string_formatted(const char *fmt, ...) {
     va_list args, args_copy;
     va_start(args, fmt);
     va_copy(args_copy, args);
-    
+
     /* First, determine required size */
     int needed = vsnprintf(NULL, 0, fmt, args);
     va_end(args);
-    
+
     if (needed < 0) {
         va_end(args_copy);
         return string_new();  /* Format error */
     }
-    
+
     String s = string_with_capacity((size_t)needed);
     vsnprintf(s.data, (size_t)needed + 1, fmt, args_copy);
     va_end(args_copy);
-    
+
     s.len = (size_t)needed;
     return s;
 }
@@ -326,6 +308,143 @@ static inline Option_char string_get(const String *s, size_t idx) {
 }
 
 /*============================================================================
+ * Search and Comparison
+ *============================================================================*/
+
+/**
+ * @brief Find the first occurrence of a substring
+ * @param s Pointer to the string
+ * @param needle Null-terminated substring to search for
+ * @return Option_size_t containing the byte index of the first match,
+ *         Some(0) for an empty needle, or None if not found / needle NULL
+ */
+static inline Option_size_t string_find(const String *s, const char *needle) {
+    if (!needle) return None(size_t);
+    if (*needle == '\0') return Some(size_t, 0);
+    if (!s->data || s->len == 0) return None(size_t);
+    const char *hit = strstr(s->data, needle);
+    if (!hit) return None(size_t);
+    return Some(size_t, (size_t)(hit - s->data));
+}
+
+/**
+ * @brief Check whether the string contains a substring
+ * @param s Pointer to the string
+ * @param needle Null-terminated substring to search for
+ * @return true if found (an empty needle always matches)
+ */
+static inline bool string_contains(const String *s, const char *needle) {
+    return string_find(s, needle).has_value;
+}
+
+/**
+ * @brief Check whether the string starts with a prefix
+ * @param s Pointer to the string
+ * @param prefix Null-terminated prefix (empty prefix always matches)
+ * @return true if s begins with prefix
+ */
+static inline bool string_starts_with(const String *s, const char *prefix) {
+    if (!prefix) return false;
+    size_t plen = strlen(prefix);
+    if (plen == 0) return true;
+    if (plen > s->len) return false;
+    return memcmp(s->data, prefix, plen) == 0;
+}
+
+/**
+ * @brief Check whether the string ends with a suffix
+ * @param s Pointer to the string
+ * @param suffix Null-terminated suffix (empty suffix always matches)
+ * @return true if s ends with suffix
+ */
+static inline bool string_ends_with(const String *s, const char *suffix) {
+    if (!suffix) return false;
+    size_t slen = strlen(suffix);
+    if (slen == 0) return true;
+    if (slen > s->len) return false;
+    return memcmp(s->data + (s->len - slen), suffix, slen) == 0;
+}
+
+/**
+ * @brief Compare two strings for content equality
+ * @param a Pointer to the first string (NULL is treated as empty)
+ * @param b Pointer to the second string (NULL is treated as empty)
+ * @return true if both contain the same bytes
+ */
+static inline bool string_eq(const String *a, const String *b) {
+    size_t a_len = a ? a->len : 0;
+    size_t b_len = b ? b->len : 0;
+    if (a_len != b_len) return false;
+    if (a_len == 0) return true;
+    return memcmp(a->data, b->data, a_len) == 0;
+}
+
+/**
+ * @brief Trim leading and trailing whitespace in place
+ * @param s Pointer to the string
+ */
+static inline void string_trim(String *s) {
+    if (!s->data || s->len == 0) return;
+    size_t start = 0;
+    while (start < s->len && isspace((unsigned char)s->data[start])) start++;
+    size_t end = s->len;
+    while (end > start && isspace((unsigned char)s->data[end - 1])) end--;
+    size_t new_len = end - start;
+    if (start > 0 && new_len > 0) {
+        memmove(s->data, s->data + start, new_len);
+    }
+    s->len = new_len;
+    s->data[new_len] = '\0';
+}
+
+/*============================================================================
+ * Splitting
+ *============================================================================*/
+
+/**
+ * @brief Iterate delimiter-separated pieces of a character slice
+ * @param rest In/out cursor over the remaining input; initialize with
+ *             string_as_slice()/string_slice() (or any Slice_char) and pass
+ *             the same variable on each call
+ * @param delim Delimiter character
+ * @param out Receives the next piece (excluding the delimiter); may be empty
+ *            for consecutive delimiters
+ * @return true if a piece was produced, false when input is exhausted
+ *
+ * Example:
+ *   Slice_char rest = string_as_slice(&s);
+ *   Slice_char part;
+ *   while (string_split_next(&rest, ',', &part)) {
+ *       // use part.data / part.len (not null-terminated)
+ *   }
+ *
+ * @note Pieces view the original buffer and are not null-terminated.
+ * @note "a,b," yields "a", "b", "" (a trailing delimiter yields a final
+ *       empty piece); an empty slice (NULL data) yields no pieces.
+ */
+static inline bool string_split_next(Slice_char *rest, char delim, Slice_char *out) {
+    if (!rest || !out) return false;
+    /* Exhausted: signalled by a NULL cursor after the final piece */
+    if (!rest->data) return false;
+
+    size_t i = 0;
+    while (i < rest->len && rest->data[i] != delim) i++;
+
+    *out = (Slice_char){ .data = rest->data, .len = i };
+
+    if (i < rest->len) {
+        /* Skip the delimiter; remaining piece may be empty */
+        rest->data = rest->data + i + 1;
+        rest->len = rest->len - i - 1;
+    } else {
+        /* Consumed the final piece */
+        rest->data = NULL;
+        rest->len = 0;
+    }
+    return true;
+}
+
+/*============================================================================
  * Slicing
  *============================================================================*/
 
@@ -340,12 +459,12 @@ static inline Option_char string_get(const String *s, size_t idx) {
  */
 static inline Slice_char string_slice(const String *s, size_t start, size_t end) {
     if (!s->data || s->len == 0) {
-        return (Slice_char){ .data = NULL, .len = 0, .vt = &_slice_char_vt };
+        return (Slice_char){ .data = NULL, .len = 0 };
     }
     if (start > s->len) start = s->len;
     if (end > s->len) end = s->len;
     if (start > end) start = end;
-    return (Slice_char){ .data = s->data + start, .len = end - start, .vt = &_slice_char_vt };
+    return (Slice_char){ .data = s->data + start, .len = end - start };
 }
 
 /**
@@ -355,9 +474,9 @@ static inline Slice_char string_slice(const String *s, size_t start, size_t end)
  */
 static inline Slice_char string_as_slice(const String *s) {
     if (!s->data) {
-        return (Slice_char){ .data = NULL, .len = 0, .vt = &_slice_char_vt };
+        return (Slice_char){ .data = NULL, .len = 0 };
     }
-    return (Slice_char){ .data = s->data, .len = s->len, .vt = &_slice_char_vt };
+    return (Slice_char){ .data = s->data, .len = s->len };
 }
 
 /*============================================================================
@@ -405,7 +524,7 @@ static inline String string_concat(const String *a, const String *b) {
  * @note Resets the string to empty state
  */
 static inline void string_free(String *s) {
-    free(s->data);
+    CYAN_FREE(s->data);
     s->data = NULL;
     s->len = 0;
     s->cap = 0;
@@ -419,7 +538,7 @@ static inline void string_free(String *s) {
  * @brief Declare a string with automatic cleanup on scope exit
  * @param name Variable name
  * @param init Initializer expression (e.g., string_from("hello"))
- * 
+ *
  * Example:
  *   string_auto(s, string_from("Hello"));
  *   // s is automatically freed when scope exits
@@ -428,105 +547,83 @@ static inline void string_free(String *s) {
     __attribute__((cleanup(string_free))) String name = (init)
 
 /*============================================================================
- * Vtable Instance
- *============================================================================*/
-
-/**
- * @brief Static const vtable instance shared by all String instances
- */
-static const StringVT _string_vt = {
-    .push = string_push,
-    .append = string_append,
-    .clear = string_clear,
-    .get = string_get,
-    .len = string_len,
-    .cstr = string_cstr,
-    .slice = string_slice,
-    .free = string_free
-};
-
-/*============================================================================
  * String Convenience Macros
- *============================================================================*/
-
-#if defined(__GNUC__) || defined(__clang__)
+ *============================================================================
+ * String is monomorphic, so these need no type argument. Each argument is
+ * evaluated exactly once.
+ */
 
 /**
- * @brief Push a character to the string via vtable
+ * @brief Push a character to the string
  * @param s The string (an lvalue, not a pointer)
  * @param c Character to append
  */
-#define STR_PUSH(s, c) \
-    ({ String *_cyan_sp = &(s); _cyan_sp->vt->push(_cyan_sp, (c)); })
+#define STR_PUSH(s, c) string_push(&(s), (c))
 
 /**
- * @brief Append a C string to the string via vtable
+ * @brief Append a C string to the string
  * @param s The string (an lvalue, not a pointer)
  * @param cstr C string to append
  */
-#define STR_APPEND(s, cstr) \
-    ({ String *_cyan_sp = &(s); _cyan_sp->vt->append(_cyan_sp, (cstr)); })
+#define STR_APPEND(s, cstr) string_append(&(s), (cstr))
 
 /**
- * @brief Clear the string content via vtable
+ * @brief Clear the string content
  * @param s The string (an lvalue, not a pointer)
  */
-#define STR_CLEAR(s) \
-    ({ String *_cyan_sp = &(s); _cyan_sp->vt->clear(_cyan_sp); })
+#define STR_CLEAR(s) string_clear(&(s))
 
 /**
- * @brief Get character at index via vtable
+ * @brief Get character at index
  * @param s The string (an lvalue, not a pointer)
  * @param idx Index to access
  * @return Option_char containing the character, or None if out of bounds
  */
-#define STR_GET(s, idx) \
-    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->get(_cyan_sp, (idx)); })
+#define STR_GET(s, idx) string_get(&(s), (idx))
 
 /**
- * @brief Get the length of the string via vtable
+ * @brief Get the length of the string
  * @param s The string (an lvalue, not a pointer)
  * @return Number of characters (excluding null terminator)
  */
-#define STR_LEN(s) \
-    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->len(_cyan_sp); })
+#define STR_LEN(s) string_len(&(s))
 
 /**
- * @brief Get the null-terminated C string via vtable
+ * @brief Get the null-terminated C string
  * @param s The string (an lvalue, not a pointer)
  * @return Pointer to null-terminated character array
  */
-#define STR_CSTR(s) \
-    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->cstr(_cyan_sp); })
+#define STR_CSTR(s) string_cstr(&(s))
 
 /**
- * @brief Create a slice view of a portion of the string via vtable
+ * @brief Create a slice view of a portion of the string
  * @param s The string (an lvalue, not a pointer)
  * @param start Start index (inclusive)
  * @param end End index (exclusive)
  * @return Slice_char viewing the specified range
  */
-#define STR_SLICE(s, start, end) \
-    ({ const String *_cyan_sp = &(s); _cyan_sp->vt->slice(_cyan_sp, (start), (end)); })
+#define STR_SLICE(s, start, end) string_slice(&(s), (start), (end))
 
 /**
- * @brief Free all memory associated with the string via vtable
+ * @brief Find the first occurrence of a substring
+ * @param s The string (an lvalue, not a pointer)
+ * @param needle Substring to search for
+ * @return Option_size_t index of first match, or None
+ */
+#define STR_FIND(s, needle) string_find(&(s), (needle))
+
+/**
+ * @brief Check whether the string contains a substring
+ * @param s The string (an lvalue, not a pointer)
+ * @param needle Substring to search for
+ * @return true if found
+ */
+#define STR_CONTAINS(s, needle) string_contains(&(s), (needle))
+
+/**
+ * @brief Free all memory associated with the string
  * @param s The string (an lvalue, not a pointer)
  */
-#define STR_FREE(s) \
-    ({ String *_cyan_sp = &(s); _cyan_sp->vt->free(_cyan_sp); })
-
-#else /* Fallbacks: evaluate s more than once */
-
-#define STR_PUSH(s, c) ((s).vt->push(&(s), (c)))
-#define STR_APPEND(s, cstr) ((s).vt->append(&(s), (cstr)))
-#define STR_CLEAR(s) ((s).vt->clear(&(s)))
-#define STR_GET(s, idx) ((s).vt->get(&(s), (idx)))
-#define STR_LEN(s) ((s).vt->len(&(s)))
-#define STR_CSTR(s) ((s).vt->cstr(&(s)))
-#define STR_SLICE(s, start, end) ((s).vt->slice(&(s), (start), (end)))
-#define STR_FREE(s) ((s).vt->free(&(s)))
-
-#endif
+#define STR_FREE(s) string_free(&(s))
 
 #endif /* CYAN_STRING_H */

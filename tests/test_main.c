@@ -15,24 +15,27 @@
 #include "theft.h"
 #include <cyan/common.h>
 
-/* External test functions from component test files */
-extern int run_option_tests(theft_seed seed);
-extern int run_result_tests(theft_seed seed);
-extern int run_vector_tests(theft_seed seed);
-extern int run_slice_tests(theft_seed seed);
-extern int run_functional_tests(theft_seed seed);
-extern int run_defer_tests(theft_seed seed);
-extern int run_coro_tests(theft_seed seed);
-extern int run_serialize_tests(theft_seed seed);
-extern int run_smartptr_tests(theft_seed seed);
-extern int run_hashmap_tests(theft_seed seed);
-extern int run_string_tests(theft_seed seed);
-extern int run_match_tests(theft_seed seed);
-extern int run_channel_tests(theft_seed seed);
-extern int run_types_tests(theft_seed seed);
-extern int run_vtable_macro_tests(theft_seed seed);
-extern int run_bitint_tests(theft_seed seed);
-extern int run_bitset_tests(theft_seed seed);
+/* External test functions from component test files.
+ * Each runner reports the number of properties it ran via *num_tests and
+ * returns the number of failures. */
+extern int run_option_tests(theft_seed seed, int *num_tests);
+extern int run_result_tests(theft_seed seed, int *num_tests);
+extern int run_vector_tests(theft_seed seed, int *num_tests);
+extern int run_slice_tests(theft_seed seed, int *num_tests);
+extern int run_functional_tests(theft_seed seed, int *num_tests);
+extern int run_defer_tests(theft_seed seed, int *num_tests);
+extern int run_coro_tests(theft_seed seed, int *num_tests);
+extern int run_serialize_tests(theft_seed seed, int *num_tests);
+extern int run_smartptr_tests(theft_seed seed, int *num_tests);
+extern int run_hashmap_tests(theft_seed seed, int *num_tests);
+extern int run_string_tests(theft_seed seed, int *num_tests);
+extern int run_match_tests(theft_seed seed, int *num_tests);
+extern int run_channel_tests(theft_seed seed, int *num_tests);
+extern int run_types_tests(theft_seed seed, int *num_tests);
+extern int run_macro_tests(theft_seed seed, int *num_tests);
+extern int run_bitint_tests(theft_seed seed, int *num_tests);
+extern int run_bitset_tests(theft_seed seed, int *num_tests);
+extern int run_regression_tests(theft_seed seed, int *num_tests);
 
 /*============================================================================
  * Test Configuration
@@ -169,108 +172,169 @@ static void run_all_tests(void) {
         theft_get_builtin_type_info(THEFT_BUILTIN_bool)
     );
 
-    /* Option type tests */
     theft_seed seed = g_seed ? g_seed : theft_seed_of_time();
-    int option_failures = run_option_tests(seed);
-    g_results.failed += option_failures;
-    g_results.passed += (4 - option_failures);  /* 4 option tests */
-    g_results.total += 4;
+
+    /* Option type tests */
+    {
+        int n = 0;
+        int fails = run_option_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Result type tests */
-    int result_failures = run_result_tests(seed);
-    g_results.failed += result_failures;
-    g_results.passed += (4 - result_failures);  /* 4 result tests */
-    g_results.total += 4;
+    {
+        int n = 0;
+        int fails = run_result_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Vector type tests */
-    int vector_failures = run_vector_tests(seed);
-    g_results.failed += vector_failures;
-    g_results.passed += (6 - vector_failures);  /* 6 vector tests */
-    g_results.total += 6;
+    {
+        int n = 0;
+        int fails = run_vector_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Slice type tests */
-    int slice_failures = run_slice_tests(seed);
-    g_results.failed += slice_failures;
-    g_results.passed += (3 - slice_failures);  /* 3 slice tests */
-    g_results.total += 3;
+    {
+        int n = 0;
+        int fails = run_slice_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Functional primitives tests */
-    int functional_failures = run_functional_tests(seed);
-    g_results.failed += functional_failures;
-    g_results.passed += (4 - functional_failures);  /* 4 functional tests */
-    g_results.total += 4;
+    {
+        int n = 0;
+        int fails = run_functional_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Defer mechanism tests */
-    int defer_failures = run_defer_tests(seed);
-    g_results.failed += defer_failures;
-    g_results.passed += (4 - defer_failures);  /* 4 defer tests */
-    g_results.total += 4;
+    {
+        int n = 0;
+        int fails = run_defer_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Coroutine tests */
-    int coro_failures = run_coro_tests(seed);
-    g_results.failed += coro_failures;
-    g_results.passed += (4 - coro_failures);  /* 4 coro tests */
-    g_results.total += 4;
+    {
+        int n = 0;
+        int fails = run_coro_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Serialization tests */
-    int serialize_failures = run_serialize_tests(seed);
-    g_results.failed += serialize_failures;
-    g_results.passed += (7 - serialize_failures);  /* 7 serialize tests */
-    g_results.total += 7;
+    {
+        int n = 0;
+        int fails = run_serialize_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Smart pointer tests */
-    int smartptr_failures = run_smartptr_tests(seed);
-    g_results.failed += smartptr_failures;
-    g_results.passed += (11 - smartptr_failures);  /* 11 smartptr tests */
-    g_results.total += 11;
+    {
+        int n = 0;
+        int fails = run_smartptr_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Hash map tests */
-    int hashmap_failures = run_hashmap_tests(seed);
-    g_results.failed += hashmap_failures;
-    g_results.passed += (6 - hashmap_failures);  /* 6 hashmap tests */
-    g_results.total += 6;
+    {
+        int n = 0;
+        int fails = run_hashmap_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* String tests */
-    int string_failures = run_string_tests(seed);
-    g_results.failed += string_failures;
-    g_results.passed += (5 - string_failures);  /* 5 string tests */
-    g_results.total += 5;
+    {
+        int n = 0;
+        int fails = run_string_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Pattern matching tests */
-    int match_failures = run_match_tests(seed);
-    g_results.failed += match_failures;
-    g_results.passed += (3 - match_failures);  /* 3 match tests */
-    g_results.total += 3;
+    {
+        int n = 0;
+        int fails = run_match_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Channel tests */
-    int channel_failures = run_channel_tests(seed);
-    g_results.failed += channel_failures;
-    g_results.passed += (8 - channel_failures);  /* 8 channel tests */
-    g_results.total += 8;
+    {
+        int n = 0;
+        int fails = run_channel_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Primitive type alias tests */
-    int types_failures = run_types_tests(seed);
-    g_results.failed += types_failures;
-    g_results.passed += (6 - types_failures);  /* 6 types tests */
-    g_results.total += 6;
+    {
+        int n = 0;
+        int fails = run_types_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
-    /* Vtable convenience macro tests */
-    int vtable_macro_failures = run_vtable_macro_tests(seed);
-    g_results.failed += vtable_macro_failures;
-    g_results.passed += (4 - vtable_macro_failures);  /* 4 vtable macro tests */
-    g_results.total += 4;
+    /* Convenience macro tests */
+    {
+        int n = 0;
+        int fails = run_macro_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Bitint type tests */
-    int bitint_failures = run_bitint_tests(seed);
-    g_results.failed += bitint_failures;
-    g_results.passed += (3 - bitint_failures);  /* 3 bitint tests */
-    g_results.total += 3;
+    {
+        int n = 0;
+        int fails = run_bitint_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     /* Bitset type tests */
-    int bitset_failures = run_bitset_tests(seed);
-    g_results.failed += bitset_failures;
-    g_results.passed += (3 - bitset_failures);  /* 3 bitset tests */
-    g_results.total += 3;
+    {
+        int n = 0;
+        int fails = run_bitset_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
+
+    /* Regression tests */
+    {
+        int n = 0;
+        int fails = run_regression_tests(seed, &n);
+        g_results.failed += fails;
+        g_results.passed += (n - fails);
+        g_results.total += n;
+    }
 
     printf("\n");
 }

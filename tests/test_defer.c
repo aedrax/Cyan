@@ -276,8 +276,10 @@ static DeferTest defer_tests[] = {
 
 #define NUM_DEFER_TESTS (sizeof(defer_tests) / sizeof(defer_tests[0]))
 
-int run_defer_tests(theft_seed seed) {
+int run_defer_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_DEFER_TESTS;
     
     printf("\nDefer Mechanism Tests:\n");
     

@@ -1,17 +1,21 @@
 /**
  * @file option.h
  * @brief Option type for explicit nullable value handling
- * 
+ *
  * This header provides Option types that explicitly represent the presence
  * or absence of a value, avoiding null pointer issues and making absence
  * explicit in code.
- * 
+ *
  * Usage:
  *   OPTION_DEFINE(int);  // Define Option_int type
  *   Option_int maybe = Some(int, 42);
  *   if (is_some(maybe)) {
  *       int val = unwrap(maybe);
  *   }
+ *
+ * Define CYAN_NO_SHORT_NAMES before including to suppress the short
+ * lowercase macros (is_some, unwrap, map_option, ...); the uppercase
+ * OPT_* macros and the generated option_T_* functions are always available.
  */
 
 #ifndef CYAN_OPTION_H
@@ -23,65 +27,47 @@
  * Option Type Definition
  *============================================================================*/
 
-/* Forward declare vtable struct */
-#define OPTION_VT_FORWARD(T) \
-    typedef struct OptionVT_##T OptionVT_##T
-
 /**
  * @brief Generate an Option type for a given base type
  * @param T The base type to wrap
- * 
+ *
  * Creates a struct Option_T with:
  * - has_value: bool indicating presence of value
  * - value: the wrapped value of type T
- * - vt: pointer to shared vtable
- * 
+ *
+ * Also generates the functions:
+ * - option_T_is_some(opt), option_T_is_none(opt)
+ * - option_T_unwrap(opt) (panics on None)
+ * - option_T_unwrap_or(opt, default_val)
+ *
  * Example:
  *   OPTION_DEFINE(int);    // Creates Option_int
  *   OPTION_DEFINE(double); // Creates Option_double
  */
 #define OPTION_DEFINE(T) \
-    OPTION_VT_FORWARD(T); \
-    \
     typedef struct { \
         bool has_value; \
         T value; \
-        const OptionVT_##T *vt; \
     } Option_##T; \
     \
-    /* Vtable function implementations */ \
-    static inline bool _option_##T##_is_some(const Option_##T *opt) { \
+    CYAN_UNUSED static inline bool option_##T##_is_some(const Option_##T *opt) { \
         return opt->has_value; \
     } \
     \
-    static inline bool _option_##T##_is_none(const Option_##T *opt) { \
+    CYAN_UNUSED static inline bool option_##T##_is_none(const Option_##T *opt) { \
         return !opt->has_value; \
     } \
     \
-    static inline T _option_##T##_unwrap(const Option_##T *opt) { \
+    CYAN_UNUSED static inline T option_##T##_unwrap(const Option_##T *opt) { \
         if (!opt->has_value) CYAN_PANIC("unwrap called on None"); \
         return opt->value; \
     } \
     \
-    static inline T _option_##T##_unwrap_or(const Option_##T *opt, T default_val) { \
+    CYAN_UNUSED static inline T option_##T##_unwrap_or(const Option_##T *opt, T default_val) { \
         return opt->has_value ? opt->value : default_val; \
     } \
-    \
-    /* Vtable structure */ \
-    struct OptionVT_##T { \
-        bool (*opt_is_some)(const Option_##T *opt); \
-        bool (*opt_is_none)(const Option_##T *opt); \
-        T (*opt_unwrap)(const Option_##T *opt); \
-        T (*opt_unwrap_or)(const Option_##T *opt, T default_val); \
-    }; \
-    \
-    /* Static const vtable instance */ \
-    static const OptionVT_##T _option_##T##_vt __attribute__((unused)) = { \
-        .opt_is_some = _option_##T##_is_some, \
-        .opt_is_none = _option_##T##_is_none, \
-        .opt_unwrap = _option_##T##_unwrap, \
-        .opt_unwrap_or = _option_##T##_unwrap_or \
-    }
+    /* Dummy typedef to absorb trailing semicolon */ \
+    typedef Option_##T Option_##T##_defined
 
 /*============================================================================
  * Constructors
@@ -91,69 +77,76 @@
  * @brief Create an Option containing a value
  * @param T The type of the Option
  * @param val The value to wrap
- * @return Option_T with has_value = true and vt pointer set
- * 
+ * @return Option_T with has_value = true
+ *
  * Example:
  *   Option_int x = Some(int, 42);
  */
-#define Some(T, val) ((Option_##T){ .has_value = true, .value = (val), .vt = &_option_##T##_vt })
+#define Some(T, val) ((Option_##T){ .has_value = true, .value = (val) })
 
 /**
  * @brief Create an empty Option (no value)
  * @param T The type of the Option
- * @return Option_T with has_value = false and vt pointer set
- * 
+ * @return Option_T with has_value = false
+ *
  * Example:
  *   Option_int x = None(int);
  */
-#define None(T) ((Option_##T){ .has_value = false, .vt = &_option_##T##_vt })
+#define None(T) ((Option_##T){ .has_value = false })
 
 /*============================================================================
- * Predicates
- *============================================================================*/
+ * Core Macros (always available)
+ *============================================================================
+ * These are type-generic via member access and evaluate each argument
+ * exactly once on GNU-compatible compilers.
+ */
 
 /**
  * @brief Check if an Option contains a value
  * @param opt The Option to check
  * @return true if the Option contains a value, false otherwise
- * 
- * Example:
- *   if (is_some(maybe)) { ... }
  */
-#define is_some(opt) ((opt).has_value)
+#define OPT_IS_SOME(opt) ((opt).has_value)
 
 /**
  * @brief Check if an Option is empty
  * @param opt The Option to check
  * @return true if the Option is empty, false otherwise
- * 
- * Example:
- *   if (is_none(maybe)) { ... }
  */
-#define is_none(opt) (!(opt).has_value)
-
-/*============================================================================
- * Accessors
- *============================================================================*/
+#define OPT_IS_NONE(opt) (!(opt).has_value)
 
 /**
  * @brief Extract the value from an Option, panicking if empty
  * @param opt The Option to unwrap
  * @return The contained value
  * @note Panics if the Option is None
- * 
- * Example:
- *   int val = unwrap(maybe);  // Panics if maybe is None
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define unwrap(opt) \
+#define OPT_UNWRAP(opt) \
     ({ __typeof__(opt) _cyan_opt = (opt); \
        _cyan_opt.has_value ? _cyan_opt.value \
                            : CYAN_PANIC_EXPR("unwrap called on None", _cyan_opt.value); })
 #else
 /* Fallback: evaluates opt more than once */
-#define unwrap(opt) \
-    (is_some(opt) ? (opt).value : CYAN_PANIC_EXPR("unwrap called on None", (opt).value))
+#define OPT_UNWRAP(opt) \
+    ((opt).has_value ? (opt).value : CYAN_PANIC_EXPR("unwrap called on None", (opt).value))
+#endif
+
+/**
+ * @brief Extract the value from an Option, panicking with a custom message
+ * @param opt The Option to unwrap
+ * @param msg The panic message used if the Option is None
+ * @return The contained value
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_EXPECT(opt, msg) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? _cyan_opt.value \
+                           : CYAN_PANIC_EXPR((msg), _cyan_opt.value); })
+#else
+/* Fallback: evaluates opt more than once */
+#define OPT_EXPECT(opt, msg) \
+    ((opt).has_value ? (opt).value : CYAN_PANIC_EXPR((msg), (opt).value))
 #endif
 
 /**
@@ -161,102 +154,129 @@
  * @param opt The Option to unwrap
  * @param default_val The default value if Option is empty
  * @return The contained value if present, otherwise default_val
- *
- * Example:
- *   int val = unwrap_or(maybe, 0);  // Returns 0 if maybe is None
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define unwrap_or(opt, default_val) \
+#define OPT_UNWRAP_OR(opt, default_val) \
     ({ __typeof__(opt) _cyan_opt = (opt); \
        _cyan_opt.has_value ? _cyan_opt.value : (default_val); })
 #else
 /* Fallback: evaluates opt more than once */
-#define unwrap_or(opt, default_val) \
-    (is_some(opt) ? (opt).value : (default_val))
+#define OPT_UNWRAP_OR(opt, default_val) \
+    ((opt).has_value ? (opt).value : (default_val))
 #endif
-
-/*============================================================================
- * Transformations
- *============================================================================*/
 
 /**
  * @brief Transform the value inside an Option
  * @param opt The Option to transform
  * @param T_out The output type
- * @param fn The transformation function
+ * @param fn The transformation function (T -> T_out)
  * @return Option_T_out containing transformed value, or None if input was None
- *
- * Example:
- *   Option_int x = Some(int, 5);
- *   Option_double y = map_option(x, double, int_to_double);
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define map_option(opt, T_out, fn) \
+#define OPT_MAP(opt, T_out, fn) \
     ({ __typeof__(opt) _cyan_opt = (opt); \
        _cyan_opt.has_value ? Some(T_out, fn(_cyan_opt.value)) : None(T_out); })
 #else
 /* Fallback: evaluates opt more than once */
-#define map_option(opt, T_out, fn) \
-    (is_some(opt) ? Some(T_out, fn((opt).value)) : None(T_out))
+#define OPT_MAP(opt, T_out, fn) \
+    ((opt).has_value ? Some(T_out, fn((opt).value)) : None(T_out))
+#endif
+
+/**
+ * @brief Chain a fallible transformation
+ * @param opt The Option to chain from
+ * @param T_out The output type
+ * @param fn Function taking the contained value and returning Option_T_out
+ * @return fn's result if opt is Some, otherwise None(T_out)
+ *
+ * Example:
+ *   Option_int parsed = and_then(input, int, checked_parse);
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_AND_THEN(opt, T_out, fn) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? fn(_cyan_opt.value) : None(T_out); })
+#else
+/* Fallback: evaluates opt more than once */
+#define OPT_AND_THEN(opt, T_out, fn) \
+    ((opt).has_value ? fn((opt).value) : None(T_out))
+#endif
+
+/**
+ * @brief Provide a fallback Option when empty
+ * @param opt The Option to check
+ * @param fn Zero-argument function returning an Option of the same type
+ * @return opt if it contains a value, otherwise fn()
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_OR_ELSE(opt, fn) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? _cyan_opt : fn(); })
+#else
+/* Fallback: evaluates opt more than once */
+#define OPT_OR_ELSE(opt, fn) \
+    ((opt).has_value ? (opt) : fn())
+#endif
+
+/**
+ * @brief Convert an Option into a Result
+ * @param opt The Option to convert
+ * @param T The success type (the Option's contained type)
+ * @param E The error type
+ * @param err_val Error value used when the Option is None
+ * @return Ok(T, E, value) if Some, Err(T, E, err_val) if None
+ * @note Requires result.h and RESULT_DEFINE(T, E)
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_OK_OR(opt, T, E, err_val) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       _cyan_opt.has_value ? Ok(T, E, _cyan_opt.value) : Err(T, E, (err_val)); })
+#else
+/* Fallback: evaluates opt more than once */
+#define OPT_OK_OR(opt, T, E, err_val) \
+    ((opt).has_value ? Ok(T, E, (opt).value) : Err(T, E, (err_val)))
+#endif
+
+/**
+ * @brief Early-return propagation for Options (like Rust's `?`)
+ * @param opt The Option to unwrap
+ * @return The contained value; if the Option is None, the enclosing
+ *         function returns the None immediately
+ * @note The enclosing function must return the same Option_T type
+ * @note GNU C only (statement expressions with return)
+ *
+ * Example:
+ *   Option_int step(Option_int in) {
+ *       int v = try_some(in);   // returns None(int) to the caller on None
+ *       return Some(int, v * 2);
+ *   }
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define OPT_TRY(opt) \
+    ({ __typeof__(opt) _cyan_opt = (opt); \
+       if (!_cyan_opt.has_value) return _cyan_opt; \
+       _cyan_opt.value; })
 #endif
 
 /*============================================================================
- * Vtable Convenience Macros
+ * Short Names (suppress with CYAN_NO_SHORT_NAMES)
  *============================================================================*/
 
-/**
- * @brief Check if an Option contains a value (via vtable)
- * @param opt The Option to check (must be an lvalue)
- * @return true if the Option contains a value, false otherwise
- */
+#ifndef CYAN_NO_SHORT_NAMES
+
+#define is_some(opt) OPT_IS_SOME(opt)
+#define is_none(opt) OPT_IS_NONE(opt)
+#define unwrap(opt) OPT_UNWRAP(opt)
+#define expect(opt, msg) OPT_EXPECT(opt, msg)
+#define unwrap_or(opt, default_val) OPT_UNWRAP_OR(opt, default_val)
+#define map_option(opt, T_out, fn) OPT_MAP(opt, T_out, fn)
+#define and_then(opt, T_out, fn) OPT_AND_THEN(opt, T_out, fn)
+#define or_else(opt, fn) OPT_OR_ELSE(opt, fn)
+#define ok_or(opt, T, E, err_val) OPT_OK_OR(opt, T, E, err_val)
 #if defined(__GNUC__) || defined(__clang__)
-#define OPT_IS_SOME(opt) \
-    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_is_some(_cyan_optp); })
-#else
-/* Fallback: evaluates opt more than once */
-#define OPT_IS_SOME(opt) ((opt).vt->opt_is_some(&(opt)))
+#define try_some(opt) OPT_TRY(opt)
 #endif
 
-/**
- * @brief Check if an Option is empty (via vtable)
- * @param opt The Option to check (must be an lvalue)
- * @return true if the Option is empty, false otherwise
- */
-#if defined(__GNUC__) || defined(__clang__)
-#define OPT_IS_NONE(opt) \
-    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_is_none(_cyan_optp); })
-#else
-/* Fallback: evaluates opt more than once */
-#define OPT_IS_NONE(opt) ((opt).vt->opt_is_none(&(opt)))
-#endif
-
-/**
- * @brief Extract the value from an Option (via vtable), panicking if empty
- * @param opt The Option to unwrap (must be an lvalue)
- * @return The contained value
- * @note Panics if the Option is None
- */
-#if defined(__GNUC__) || defined(__clang__)
-#define OPT_UNWRAP(opt) \
-    ({ __typeof__(opt) *_cyan_optp = &(opt); _cyan_optp->vt->opt_unwrap(_cyan_optp); })
-#else
-/* Fallback: evaluates opt more than once */
-#define OPT_UNWRAP(opt) ((opt).vt->opt_unwrap(&(opt)))
-#endif
-
-/**
- * @brief Extract the value from an Option (via vtable), or return a default
- * @param opt The Option to unwrap (must be an lvalue)
- * @param default_val The default value if Option is empty
- * @return The contained value if present, otherwise default_val
- */
-#if defined(__GNUC__) || defined(__clang__)
-#define OPT_UNWRAP_OR(opt, default_val) \
-    ({ __typeof__(opt) *_cyan_optp = &(opt); \
-       _cyan_optp->vt->opt_unwrap_or(_cyan_optp, (default_val)); })
-#else
-/* Fallback: evaluates opt more than once */
-#define OPT_UNWRAP_OR(opt, default_val) ((opt).vt->opt_unwrap_or(&(opt), (default_val)))
-#endif
+#endif /* CYAN_NO_SHORT_NAMES */
 
 #endif /* CYAN_OPTION_H */

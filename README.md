@@ -20,7 +20,7 @@ A header-only C11 library that brings modern programming paradigms to C, includi
 | **Coroutines** | Stackful cooperative multitasking |
 | **Channels** | CSP-style communication primitives |
 | **Pattern Matching** | Ergonomic Option/Result handling |
-| **Serialization** | Text-based data serialization with S-expression format |
+| **Serialization** | S-expression serialization with a full parser (atoms, strings, symbols, nested lists) |
 | **Custom Bit-Width Integers** | Zig-inspired integers with arbitrary bit widths (u6, i12, etc.) |
 | **Bitset** | Fixed-size bit collections for efficient flag management |
 
@@ -65,10 +65,9 @@ isize offset = -100;   // signed pointer-sized
 // Floating-point
 f32 pi_f = 3.14159f;   // float
 f64 pi_d = 3.14159265358979;  // double
-
-// Type-erased pointer
-any* generic_ptr = &some_data;
 ```
+
+For type-erased pointers, use plain `void *` (the `any` alias was removed in 0.2.0).
 
 **Available Types:**
 
@@ -78,7 +77,7 @@ any* generic_ptr = &some_data;
 | Unsigned integers | `u8`, `u16`, `u32`, `u64`, `u128`* |
 | Pointer-sized | `isize`, `usize` |
 | Floating-point | `f16`*, `f32`, `f64`, `f80`*, `f128`* |
-| Special | `bool`, `any` |
+| Special | `bool` |
 
 *Platform-dependent. Check `CYAN_HAS_INT128`, `CYAN_HAS_FLOAT16`, `CYAN_HAS_FLOAT80`, `CYAN_HAS_FLOAT128` macros.
 
@@ -239,23 +238,23 @@ i32 main(void) {
 | `bitset_N_any(bs)` | Check if any bit is set |
 | `bitset_N_none(bs)` | Check if no bits are set |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
 
 | Macro | Description |
 |-------|-------------|
-| `BS_SET(bs, i)` | Set bit at index |
-| `BS_CLEAR(bs, i)` | Clear bit at index |
-| `BS_GET(bs, i)` | Get bit at index |
-| `BS_TOGGLE(bs, i)` | Toggle bit at index |
-| `BS_UNION(a, b)` | Union of two bitsets |
-| `BS_INTERSECT(a, b)` | Intersection of two bitsets |
-| `BS_DIFF(a, b)` | Difference of two bitsets |
-| `BS_COMPLEMENT(bs)` | Complement of bitset |
-| `BS_EQ(a, b)` | Check equality |
-| `BS_COUNT(bs)` | Count set bits |
-| `BS_ALL(bs)` | Check if all bits set |
-| `BS_ANY(bs)` | Check if any bit set |
-| `BS_NONE(bs)` | Check if no bits set |
+| `BS_SET(N, bs, i)` | Set bit at index |
+| `BS_CLEAR(N, bs, i)` | Clear bit at index |
+| `BS_GET(N, bs, i)` | Get bit at index |
+| `BS_TOGGLE(N, bs, i)` | Toggle bit at index |
+| `BS_UNION(N, a, b)` | Union of two bitsets |
+| `BS_INTERSECT(N, a, b)` | Intersection of two bitsets |
+| `BS_DIFF(N, a, b)` | Difference of two bitsets |
+| `BS_COMPLEMENT(N, bs)` | Complement of bitset |
+| `BS_EQ(N, a, b)` | Check equality |
+| `BS_COUNT(N, bs)` | Count set bits |
+| `BS_ALL(N, bs)` | Check if all bits set |
+| `BS_ANY(N, bs)` | Check if any bit set |
+| `BS_NONE(N, bs)` | Check if no bits set |
 
 ### Named Flags
 
@@ -275,16 +274,16 @@ i32 main(void) {
     Bitset_4 perms = bitset_4_new();
     
     // Set flags using names
-    FLAGS_SET(perms, Permissions_READ);
-    FLAGS_SET(perms, Permissions_WRITE);
+    FLAGS_SET(4, perms, Permissions_READ);
+    FLAGS_SET(4, perms, Permissions_WRITE);
     
     // Check flags
-    if (FLAGS_HAS(perms, Permissions_READ)) {
+    if (FLAGS_HAS(4, perms, Permissions_READ)) {
         printf("Has read permission\n");
     }
     
     // Clear flags
-    FLAGS_CLEAR(perms, Permissions_WRITE);
+    FLAGS_CLEAR(4, perms, Permissions_WRITE);
     
     return 0;
 }
@@ -295,9 +294,9 @@ i32 main(void) {
 | Macro | Description |
 |-------|-------------|
 | `FLAGS_DEFINE(Name, ...)` | Define named flags with sequential bit positions |
-| `FLAGS_SET(bs, flag)` | Set the specified flag |
-| `FLAGS_CLEAR(bs, flag)` | Clear the specified flag |
-| `FLAGS_HAS(bs, flag)` | Check if flag is set |
+| `FLAGS_SET(N, bs, flag)` | Set the specified flag |
+| `FLAGS_CLEAR(N, bs, flag)` | Clear the specified flag |
+| `FLAGS_HAS(N, bs, flag)` | Check if flag is set |
 
 ---
 
@@ -387,6 +386,43 @@ i32 main(void) {
 }
 ```
 
+**Combinators (new in 0.2.0):**
+
+```c
+RESULT_DEFINE(i32, const_charp);  // Needed for ok_or
+
+Option_i32 checked_half(i32 x) {  // Fallible transform for and_then
+    return (x % 2 == 0) ? Some(i32, x / 2) : None(i32);
+}
+Option_i32 default_value(void) { return Some(i32, 0); }
+
+Option_i32 half_plus_one(Option_i32 in) {
+    i32 v = try_some(in);  // Rust-`?` style: returns None(i32) to the
+                           // caller if `in` is empty
+    return Some(i32, v / 2 + 1);
+}
+
+i32 main(void) {
+    Option_i32 opt = Some(i32, 42);
+    
+    // Unwrap with a custom panic message
+    i32 v = expect(opt, "expected a value");
+    
+    // Chain a fallible transformation (fn returns an Option)
+    Option_i32 halved = and_then(opt, i32, checked_half);
+    
+    // Provide a fallback Option when empty
+    Option_i32 with_fallback = or_else(halved, default_value);
+    
+    // Convert Option -> Result, supplying the error for None
+    Result_i32_const_charp res = ok_or(opt, i32, const_charp, "was empty");
+    
+    return 0;
+}
+```
+
+`try_some` requires the enclosing function to return the same `Option_T` type (GCC/Clang only).
+
 **Option API:**
 
 | Function | Description |
@@ -397,9 +433,16 @@ i32 main(void) {
 | `is_none(opt)` | Check if Option is empty |
 | `unwrap(opt)` | Extract value (panics if None) |
 | `unwrap_or(opt, default)` | Extract value or return default |
+| `expect(opt, msg)` | Extract value (panics with `msg` if None) |
 | `map_option(opt, T_out, fn)` | Transform the contained value |
+| `and_then(opt, T_out, fn)` | Chain a function returning `Option_T_out` |
+| `or_else(opt, fn)` | Fall back to `fn()` (returns same Option type) if None |
+| `ok_or(opt, T, E, err_val)` | Convert to `Result_T_E` (Err on None) |
+| `try_some(opt)` | Extract value, or early-return the None (like Rust's `?`) |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+The short names above are default-on aliases for these uppercase macros, which are always available (even with `CYAN_NO_SHORT_NAMES` defined):
 
 | Macro | Description |
 |-------|-------------|
@@ -407,6 +450,12 @@ i32 main(void) {
 | `OPT_IS_NONE(opt)` | Check if Option is empty |
 | `OPT_UNWRAP(opt)` | Extract value (panics if None) |
 | `OPT_UNWRAP_OR(opt, def)` | Extract value or return default |
+| `OPT_EXPECT(opt, msg)` | Extract value (panics with `msg` if None) |
+| `OPT_MAP(opt, T_out, fn)` | Transform the contained value |
+| `OPT_AND_THEN(opt, T_out, fn)` | Chain a function returning `Option_T_out` |
+| `OPT_OR_ELSE(opt, fn)` | Fall back to `fn()` if None |
+| `OPT_OK_OR(opt, T, E, err_val)` | Convert to `Result_T_E` (Err on None) |
+| `OPT_TRY(opt)` | Extract value, or early-return the None |
 
 ---
 
@@ -443,6 +492,36 @@ i32 main(void) {
 }
 ```
 
+**Combinators (new in 0.2.0):**
+
+```c
+Result_i32_const_charp checked_double(i32 x) {  // For and_then_result
+    if (x > 1000000) return Err(i32, const_charp, "too large");
+    return Ok(i32, const_charp, x * 2);
+}
+
+Result_i32_const_charp parse_and_double(const char *str) {
+    // try_ok: Rust-`?` style early return. If parse_positive returns
+    // an Err, that Err is returned to our caller immediately.
+    i32 val = try_ok(parse_positive(str));
+    return Ok(i32, const_charp, val * 2);
+}
+
+i32 main(void) {
+    Result_i32_const_charp res = parse_positive("42");
+    
+    // Unwrap with a custom panic message
+    i32 v = expect_ok(res, "expected a parsed value");
+    
+    // Chain a fallible transformation (fn returns a Result)
+    Result_i32_const_charp chained = and_then_result(res, i32, const_charp, checked_double);
+    
+    return 0;
+}
+```
+
+`try_ok` requires the enclosing function to return the same `Result_T_E` type (GCC/Clang only).
+
 **Result API:**
 
 | Function | Description |
@@ -454,10 +533,15 @@ i32 main(void) {
 | `unwrap_ok(res)` | Extract success value (panics if Err) |
 | `unwrap_err(res)` | Extract error value (panics if Ok) |
 | `unwrap_ok_or(res, default)` | Extract success or return default |
+| `expect_ok(res, msg)` | Extract success value (panics with `msg` if Err) |
 | `map_result(res, T_out, E, fn)` | Transform success value |
 | `map_err(res, T, E_out, fn)` | Transform error value |
+| `and_then_result(res, T_out, E, fn)` | Chain a function returning `Result_T_out_E` |
+| `try_ok(res)` | Extract Ok value, or early-return the Err (like Rust's `?`) |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+The short names above are default-on aliases for these uppercase macros, which are always available (even with `CYAN_NO_SHORT_NAMES` defined):
 
 | Macro | Description |
 |-------|-------------|
@@ -466,6 +550,11 @@ i32 main(void) {
 | `RES_UNWRAP_OK(res)` | Extract success value (panics if Err) |
 | `RES_UNWRAP_ERR(res)` | Extract error value (panics if Ok) |
 | `RES_UNWRAP_OK_OR(res, def)` | Extract success or return default |
+| `RES_EXPECT_OK(res, msg)` | Extract success value (panics with `msg` if Err) |
+| `RES_MAP(res, T_out, E, fn)` | Transform success value |
+| `RES_MAP_ERR(res, T, E_out, fn)` | Transform error value |
+| `RES_AND_THEN(res, T_out, E, fn)` | Chain a function returning `Result_T_out_E` |
+| `RES_TRY(res)` | Extract Ok value, or early-return the Err |
 
 ---
 
@@ -510,6 +599,24 @@ i32 main(void) {
 }
 ```
 
+**New in 0.2.0 — insert, remove, extend, reserve, clear:**
+
+```c
+Vec_i32 v = vec_i32_new();
+vec_i32_reserve(&v, 16);          // Ensure capacity for at least 16 elements
+
+i32 batch[] = {1, 2, 3, 4};
+vec_i32_extend(&v, batch, 4);     // Append a whole array: {1, 2, 3, 4}
+
+vec_i32_insert(&v, 1, 99);        // Shift-insert at index: {1, 99, 2, 3, 4}
+
+Option_i32 removed = vec_i32_remove(&v, 1);  // Some(99), rest shifts down
+                                             // Out-of-bounds index returns None
+
+vec_i32_clear(&v);                // Length back to 0, capacity kept
+vec_i32_free(&v);
+```
+
 **Vector API:**
 
 | Function | Description |
@@ -520,17 +627,29 @@ i32 main(void) {
 | `vec_T_pop(v)` | Remove and return last element as Option |
 | `vec_T_get(v, idx)` | Get element at index as Option |
 | `vec_T_len(v)` | Get current length |
+| `vec_T_insert(v, idx, elem)` | Insert element at index (shifts tail right) |
+| `vec_T_remove(v, idx)` | Remove element at index as Option (shifts tail left) |
+| `vec_T_extend(v, src, n)` | Append `n` elements from a C array |
+| `vec_T_reserve(v, min_cap)` | Ensure capacity of at least `min_cap` |
+| `vec_T_clear(v)` | Reset length to 0 (keeps capacity) |
 | `vec_T_free(v)` | Free vector memory |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+Macros take the element type first, mirroring `Some(T, val)`:
 
 | Macro | Description |
 |-------|-------------|
-| `VEC_PUSH(v, elem)` | Append element |
-| `VEC_POP(v)` | Remove and return last element |
-| `VEC_GET(v, idx)` | Get element at index |
-| `VEC_LEN(v)` | Get current length |
-| `VEC_FREE(v)` | Free vector memory |
+| `VEC_PUSH(T, v, elem)` | Append element |
+| `VEC_POP(T, v)` | Remove and return last element |
+| `VEC_GET(T, v, idx)` | Get element at index |
+| `VEC_LEN(T, v)` | Get current length |
+| `VEC_INSERT(T, v, idx, elem)` | Insert element at index |
+| `VEC_REMOVE(T, v, idx)` | Remove element at index as Option |
+| `VEC_EXTEND(T, v, src, n)` | Append `n` elements from a C array |
+| `VEC_RESERVE(T, v, cap)` | Ensure capacity of at least `cap` |
+| `VEC_CLEAR(T, v)` | Reset length to 0 |
+| `VEC_FREE(T, v)` | Free vector memory |
 
 ---
 
@@ -578,13 +697,13 @@ i32 main(void) {
 | `slice_T_subslice(s, start, end)` | Create subslice view |
 | `slice_T_len(s)` | Get slice length |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
 
 | Macro | Description |
 |-------|-------------|
-| `SLICE_GET(s, idx)` | Get element at index |
-| `SLICE_SUBSLICE(s, start, end)` | Create subslice view |
-| `SLICE_LEN(s)` | Get slice length |
+| `SLICE_GET(T, s, idx)` | Get element at index |
+| `SLICE_SUBSLICE(T, s, start, end)` | Create subslice view |
+| `SLICE_LEN(T, s)` | Get slice length |
 
 ---
 
@@ -650,16 +769,59 @@ i32 main(void) {
 | `hashmap_K_V_iter_next(it)` | Get next key-value pair |
 | `hashmap_K_V_free(m)` | Free map memory |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+Macros take the key and value types first:
 
 | Macro | Description |
 |-------|-------------|
-| `MAP_INSERT(m, k, v)` | Insert or update entry |
-| `MAP_GET(m, k)` | Get value as Option |
-| `MAP_CONTAINS(m, k)` | Check if key exists |
-| `MAP_REMOVE(m, k)` | Remove entry, return value |
-| `MAP_LEN(m)` | Get number of entries |
-| `MAP_FREE(m)` | Free map memory |
+| `MAP_INSERT(K, V, m, k, val)` | Insert or update entry |
+| `MAP_GET(K, V, m, k)` | Get value as Option |
+| `MAP_CONTAINS(K, V, m, k)` | Check if key exists |
+| `MAP_REMOVE(K, V, m, k)` | Remove entry, return value |
+| `MAP_LEN(K, V, m)` | Get number of entries |
+| `MAP_FREE(K, V, m)` | Free map memory |
+
+> **Warning:** `HASHMAP_DEFINE` hashes and compares the raw bytes of the key type. For pointer keys such as `char *`, that means the *pointer value* is hashed, not the pointed-to contents — two identical strings at different addresses are different keys. Use `HASHMAP_STR_DEFINE` for string keys.
+
+### String-Keyed HashMap (new in 0.2.0)
+
+`HASHMAP_STR_DEFINE(V)` defines `HashMap_str_V` with content-hashed `char *` keys:
+
+```c
+#include <cyan/hashmap.h>
+
+OPTION_DEFINE(i32);        // Required before HASHMAP_STR_DEFINE(i32)
+HASHMAP_STR_DEFINE(i32);   // HashMap_str_i32
+
+i32 main(void) {
+    HashMap_str_i32 ages = hashmap_str_i32_new();
+    
+    // insert COPIES the key — the map owns its copy
+    char name[] = "alice";
+    hashmap_str_i32_insert(&ages, name, 30);
+    name[0] = 'A';  // Safe: the map's key copy is unaffected
+    
+    // Lookup is by content, not by pointer
+    Option_i32 age = hashmap_str_i32_get(&ages, "alice");  // Some(30)
+    
+    if (hashmap_str_i32_contains(&ages, "alice")) {
+        printf("alice is %d\n", unwrap(age));
+    }
+    
+    // remove and free release the map's key copies
+    hashmap_str_i32_remove(&ages, "alice");
+    hashmap_str_i32_free(&ages);
+    return 0;
+}
+```
+
+**Key ownership rules:**
+- `hashmap_str_V_insert` copies the key string; the caller keeps ownership of the original.
+- `hashmap_str_V_remove` and `hashmap_str_V_free` free the map's key copies.
+- Keys are hashed and compared by content, so heap strings, stack buffers, and literals all work.
+
+**String-Keyed HashMap API:** `hashmap_str_V_new()`, `hashmap_str_V_insert(m, key, value)`, `hashmap_str_V_get(m, key)`, `hashmap_str_V_contains(m, key)`, `hashmap_str_V_remove(m, key)`, `hashmap_str_V_len(m)`, `hashmap_str_V_free(m)` — same shapes as the generic map.
 
 ---
 
@@ -716,6 +878,38 @@ i32 main(void) {
 }
 ```
 
+**New in 0.2.0 — search, compare, trim, split:**
+
+```c
+String s = string_from("  Hello World  ");
+
+// Search (byte index of first match)
+Option_size_t pos = string_find(&s, "World");   // Some(8)
+bool has = string_contains(&s, "World");        // true
+
+// Prefix/suffix checks and trimming
+string_trim(&s);                                // In place: "Hello World"
+bool starts = string_starts_with(&s, "Hello");  // true
+bool ends = string_ends_with(&s, "World");      // true
+
+// Content equality (NULL-tolerant)
+String other = string_from("Hello World");
+bool same = string_eq(&s, &other);              // true
+
+// Splitting: iterate delimiter-separated parts as Slice_char views
+String csv = string_from("a,b,");
+Slice_char rest = string_as_slice(&csv);
+Slice_char part;
+while (string_split_next(&rest, ',', &part)) {
+    printf("part: %.*s\n", (int)part.len, part.data);
+}
+// Yields "a", "b", "" (a trailing delimiter produces an empty part)
+
+string_free(&s);
+string_free(&other);
+string_free(&csv);
+```
+
 **String API:**
 
 | Function | Description |
@@ -734,10 +928,19 @@ i32 main(void) {
 | `string_get(s, idx)` | Get character as Option |
 | `string_slice(s, start, end)` | Create slice view |
 | `string_concat(a, b)` | Concatenate two strings |
+| `string_find(s, needle)` | Find substring, return index as `Option_size_t` |
+| `string_contains(s, needle)` | Check if substring occurs |
+| `string_starts_with(s, prefix)` | Check prefix |
+| `string_ends_with(s, suffix)` | Check suffix |
+| `string_trim(s)` | Strip leading/trailing whitespace in place |
+| `string_eq(a, b)` | Content equality (NULL-tolerant) |
+| `string_split_next(rest, delim, out)` | Advance split iterator over a `Slice_char` |
 | `string_free(s)` | Free string memory |
 | `string_auto(name, init)` | Declare with auto-cleanup |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+String is monomorphic, so its macros take no type argument:
 
 | Macro | Description |
 |-------|-------------|
@@ -748,13 +951,15 @@ i32 main(void) {
 | `STR_LEN(s)` | Get length |
 | `STR_CSTR(s)` | Get null-terminated C string |
 | `STR_SLICE(s, start, end)` | Create slice view |
+| `STR_FIND(s, needle)` | Find substring, return `Option_size_t` |
+| `STR_CONTAINS(s, needle)` | Check if substring occurs |
 | `STR_FREE(s)` | Free string memory |
 
 ---
 
 ## Functional Primitives
 
-Higher-order functions for declarative data transformation.
+Higher-order functions for declarative data transformation. The canonical names are `cyan_map`, `cyan_filter`, `cyan_reduce`, and `cyan_foreach`; the short aliases `map`, `filter`, `reduce`, and `foreach` are enabled by default and can be suppressed with `#define CYAN_NO_SHORT_NAMES` (the `cyan_*` names remain available).
 
 ```c
 #include <cyan/functional.h>
@@ -796,6 +1001,9 @@ i32 main(void) {
     foreach(numbers, len, print_i32);
     // prints: 1 2 3 4 5
     
+    // The canonical names work identically (and survive CYAN_NO_SHORT_NAMES)
+    cyan_foreach(numbers, len, print_i32);
+    
     return 0;
 }
 ```
@@ -825,12 +1033,15 @@ vec_foreach_i32(&v, print_i32);
 
 **Functional API:**
 
+| Macro | Short alias | Description |
+|-------|-------------|-------------|
+| `cyan_map(arr, len, out, fn)` | `map` | Transform each element |
+| `cyan_filter(arr, len, out, out_len, pred)` | `filter` | Select elements matching predicate |
+| `cyan_reduce(result, arr, len, init, acc_fn)` | `reduce` | Combine elements into single value |
+| `cyan_foreach(arr, len, fn)` | `foreach` | Execute function on each element |
+
 | Macro | Description |
 |-------|-------------|
-| `map(arr, len, out, fn)` | Transform each element |
-| `filter(arr, len, out, out_len, pred)` | Select elements matching predicate |
-| `reduce(result, arr, len, init, acc_fn)` | Combine elements into single value |
-| `foreach(arr, len, fn)` | Execute function on each element |
 | `VEC_MAP_DEFINE(T_in, T_out)` | Generate vector map function |
 | `VEC_FILTER_DEFINE(T)` | Generate vector filter function |
 | `VEC_REDUCE_DEFINE(T, R)` | Generate vector reduce function |
@@ -949,28 +1160,23 @@ i32 main(void) {
         }
     }
     
-    // Vtable method calls (equivalent to standalone functions)
-    if (!weak.vt->wptr_is_expired(&weak)) {
-        Option_SharedPtr_i32 upgraded = weak.vt->wptr_upgrade(&weak);
-        if (upgraded.has_value) {
-            printf("Upgraded via vtable: %d\n", shared_i32_deref(&upgraded.value));
-            shared_i32_release(&upgraded.value);
-        }
-    }
-    
-    // Convenience macros (concise vtable access)
-    if (!WPTR_IS_EXPIRED(weak)) {
-        Option_SharedPtr_i32 upgraded = WPTR_UPGRADE(weak);
+    // Convenience macros (equivalent to the standalone functions)
+    if (!WPTR_IS_EXPIRED(i32, weak)) {
+        Option_SharedPtr_i32 upgraded = WPTR_UPGRADE(i32, weak);
         if (upgraded.has_value) {
             printf("Upgraded via macro: %d\n", shared_i32_deref(&upgraded.value));
             shared_i32_release(&upgraded.value);
         }
     }
     
+    // Clone a weak reference (new in 0.2.0)
+    WeakPtr_i32 weak2 = WPTR_CLONE(i32, weak);
+    
     shared_i32_release(&owner);  // Memory freed
     // weak_i32_is_expired(&weak) now returns true
     
-    WPTR_RELEASE(weak);  // Release weak reference (via convenience macro)
+    WPTR_RELEASE(i32, weak);   // Release weak references
+    WPTR_RELEASE(i32, weak2);
     return 0;
 }
 ```
@@ -994,24 +1200,28 @@ i32 main(void) {
 | `weak_T_from_shared(s)` | Create weak reference |
 | `weak_T_is_expired(w)` | Check if target freed |
 | `weak_T_upgrade(w)` | Upgrade to shared pointer |
+| `weak_T_clone(w)` | Clone weak reference (new in 0.2.0) |
 | `weak_T_release(w)` | Release weak reference |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+Macros take the pointee type first:
 
 | Macro | Description |
 |-------|-------------|
-| `UPTR_GET(u)` | Get raw pointer from UniquePtr |
-| `UPTR_DEREF(u)` | Dereference UniquePtr |
-| `UPTR_MOVE(u)` | Transfer ownership from UniquePtr |
-| `UPTR_FREE(u)` | Free UniquePtr |
-| `SPTR_GET(s)` | Get raw pointer from SharedPtr |
-| `SPTR_DEREF(s)` | Dereference SharedPtr |
-| `SPTR_CLONE(s)` | Clone SharedPtr (increment ref count) |
-| `SPTR_COUNT(s)` | Get reference count |
-| `SPTR_RELEASE(s)` | Release SharedPtr (decrement ref count) |
-| `WPTR_IS_EXPIRED(w)` | Check if WeakPtr target freed |
-| `WPTR_UPGRADE(w)` | Upgrade WeakPtr to SharedPtr |
-| `WPTR_RELEASE(w)` | Release WeakPtr |
+| `UPTR_GET(T, u)` | Get raw pointer from UniquePtr |
+| `UPTR_DEREF(T, u)` | Dereference UniquePtr |
+| `UPTR_MOVE(T, u)` | Transfer ownership from UniquePtr |
+| `UPTR_FREE(T, u)` | Free UniquePtr |
+| `SPTR_GET(T, s)` | Get raw pointer from SharedPtr |
+| `SPTR_DEREF(T, s)` | Dereference SharedPtr |
+| `SPTR_CLONE(T, s)` | Clone SharedPtr (increment ref count) |
+| `SPTR_COUNT(T, s)` | Get reference count |
+| `SPTR_RELEASE(T, s)` | Release SharedPtr (decrement ref count) |
+| `WPTR_IS_EXPIRED(T, w)` | Check if WeakPtr target freed |
+| `WPTR_UPGRADE(T, w)` | Upgrade WeakPtr to SharedPtr |
+| `WPTR_CLONE(T, w)` | Clone WeakPtr (new in 0.2.0) |
+| `WPTR_RELEASE(T, w)` | Release WeakPtr |
 
 ---
 
@@ -1066,6 +1276,8 @@ i32 main(void) {
 ## Coroutines
 
 Stackful cooperative multitasking using POSIX ucontext.
+
+> **EXPERIMENTAL:** the implementation relies on POSIX ucontext, which has been deprecated on macOS since 10.6 and does not exist on non-POSIX platforms (Windows). It works on current Linux and macOS toolchains, but the underlying primitive has no long-term platform guarantees. The API may change if the backend is replaced.
 
 ```c
 #include <cyan/coro.h>
@@ -1126,6 +1338,7 @@ i32 main(void) {
 | `coro_yield(c)` | Yield without value |
 | `coro_yield_value(c, val)` | Yield with value |
 | `coro_get_yield(c, T)` | Get yielded value |
+| `coro_has_yield(c)` | Check if a yielded value is available |
 | `coro_is_finished(c)` | Check if coroutine completed |
 | `coro_status(c)` | Get current status |
 | `coro_free(c)` | Free coroutine resources |
@@ -1214,17 +1427,21 @@ i32 main(void) {
 | `chan_T_is_closed(ch)` | Check if closed |
 | `chan_T_free(ch)` | Free channel |
 
-**Convenience Macros (vtable-based):**
+**Convenience Macros:**
+
+Macros take the element type first (`ch` is a pointer):
 
 | Macro | Description |
 |-------|-------------|
-| `CHAN_SEND(ch, val)` | Send value to channel |
-| `CHAN_RECV(ch)` | Receive value from channel |
-| `CHAN_TRY_SEND(ch, val)` | Non-blocking send |
-| `CHAN_TRY_RECV(ch)` | Non-blocking receive |
-| `CHAN_CLOSE(ch)` | Close channel |
-| `CHAN_IS_CLOSED(ch)` | Check if closed |
-| `CHAN_FREE(ch)` | Free channel |
+| `CHAN_SEND(T, ch, val)` | Send value to channel |
+| `CHAN_RECV(T, ch)` | Receive value from channel |
+| `CHAN_TRY_SEND(T, ch, val)` | Non-blocking send |
+| `CHAN_TRY_RECV(T, ch)` | Non-blocking receive |
+| `CHAN_CLOSE(T, ch)` | Close channel |
+| `CHAN_IS_CLOSED(T, ch)` | Check if closed |
+| `CHAN_FREE(T, ch)` | Free channel |
+
+Channel functions are NULL-safe: sending on a NULL channel returns `CHAN_CLOSED`, receiving returns None, and `is_closed` reports true.
 
 **Channel Status:**
 - `CHAN_OK` - Operation succeeded
@@ -1233,35 +1450,18 @@ i32 main(void) {
 
 ---
 
-## Vtable Method-Style API
+## Method-Style Macros
 
-All Cyan collection types support a method-style API through vtables (virtual method tables). This provides an object-oriented feel while maintaining C's efficiency.
+Every Cyan collection type pairs its generated functions with uppercase convenience macros. The macros follow a single **type-first convention**: the type parameter comes first, exactly as it does in constructors like `Some(i32, 42)` or `Ok(i32, const_charp, val)`.
 
-### How It Works
-
-Each type instance contains a pointer to a shared static vtable. All instances of the same type share the same vtable, so the memory overhead is just one pointer per instance.
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Static Memory                         │
-│  ┌─────────────────┐                                    │
-│  │ _vec_i32_vt     │ ◄── Single vtable per type         │
-│  │ (static const)  │                                    │
-│  └────────┬────────┘                                    │
-│           │                                              │
-└───────────┼─────────────────────────────────────────────┘
-            │
-            ▼
-┌───────────────────────────────────────────────────────────┐
-│                    Heap/Stack Memory                       │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐              │
-│  │ Vec_i32  │   │ Vec_i32  │   │ Vec_i32  │              │
-│  │ v1.vt ───┼───┼──────────┼───┼──────────┼──► shared    │
-│  └──────────┘   └──────────┘   └──────────┘              │
-└───────────────────────────────────────────────────────────┘
+```c
+VEC_PUSH(i32, v, 42);      // mirrors Some(i32, 42)
+MAP_GET(i32, i32, m, key); // mirrors Ok/Err's (T, E, ...) ordering
 ```
 
-### Three Ways to Call Operations
+The macros are zero-cost aliases: each one expands directly to a call to the corresponding generated function (`VEC_PUSH(i32, v, 42)` becomes `vec_i32_push(&v, 42)`), so there is no indirection and no runtime overhead, and every argument is evaluated exactly once. Since 0.2.0, Cyan types are plain structs — an `Option_i32` is just a `bool` plus an `i32`, a `Vec_i32` is just `data` + `len` + `cap`. There are no embedded function pointers or vtables of any kind.
+
+### Two Ways to Call Operations
 
 ```c
 #include <cyan/vector.h>
@@ -1275,198 +1475,29 @@ i32 main(void) {
     // 1. Standalone function (traditional)
     vec_i32_push(&v, 42);
     
-    // 2. Vtable method call (OOP-style)
-    v.vt->push(&v, 42);
+    // 2. Convenience macro (type-first, expands to the call above)
+    VEC_PUSH(i32, v, 42);
     
-    // 3. Convenience macro (concise)
-    VEC_PUSH(v, 42);
-    
-    // All three are equivalent!
+    // Both are equivalent!
     
     vec_i32_free(&v);
     return 0;
 }
 ```
 
-### Vector Vtable
+The same pattern applies to every container. For a `HashMap`, both type parameters are passed:
 
 ```c
-// Vtable method calls
-v.vt->push(&v, elem);      // Append element
-v.vt->pop(&v);             // Remove and return last element
-v.vt->get(&v, idx);        // Get element at index
-v.vt->len(&v);             // Get length
-v.vt->free(&v);            // Free memory
+HashMap_i32_i32 m = hashmap_i32_i32_new();
 
-// Convenience macros
-VEC_PUSH(v, elem)          // v.vt->push(&v, elem)
-VEC_POP(v)                 // v.vt->pop(&v)
-VEC_GET(v, idx)            // v.vt->get(&v, idx)
-VEC_LEN(v)                 // v.vt->len(&v)
-VEC_FREE(v)                // v.vt->free(&v)
+hashmap_i32_i32_insert(&m, 1, 100);   // Function style
+MAP_INSERT(i32, i32, m, 2, 200);      // Macro style
+
+Option_i32 val = MAP_GET(i32, i32, m, 1);
+MAP_FREE(i32, i32, m);
 ```
 
-### HashMap Vtable
-
-```c
-// Vtable method calls
-m.vt->insert(&m, key, val);  // Insert key-value pair
-m.vt->get(&m, key);          // Get value by key
-m.vt->contains(&m, key);     // Check if key exists
-m.vt->remove(&m, key);       // Remove and return value
-m.vt->len(&m);               // Get number of entries
-m.vt->free(&m);              // Free memory
-
-// Convenience macros
-MAP_INSERT(m, k, v)        // m.vt->insert(&m, k, v)
-MAP_GET(m, k)              // m.vt->get(&m, k)
-MAP_CONTAINS(m, k)         // m.vt->contains(&m, k)
-MAP_REMOVE(m, k)           // m.vt->remove(&m, k)
-MAP_LEN(m)                 // m.vt->len(&m)
-MAP_FREE(m)                // m.vt->free(&m)
-```
-
-### Slice Vtable
-
-```c
-// Vtable method calls
-s.vt->get(s, idx);           // Get element at index
-s.vt->subslice(s, start, end); // Create subslice
-s.vt->len(s);                // Get length
-
-// Convenience macros
-SLICE_GET(s, idx)          // s.vt->get(s, idx)
-SLICE_SUBSLICE(s, st, end) // s.vt->subslice(s, st, end)
-SLICE_LEN(s)               // s.vt->len(s)
-```
-
-### String Vtable
-
-```c
-// Vtable method calls
-s.vt->push(&s, c);           // Append character
-s.vt->append(&s, cstr);      // Append C string
-s.vt->clear(&s);             // Clear content
-s.vt->get(&s, idx);          // Get character at index
-s.vt->len(&s);               // Get length
-s.vt->cstr(&s);              // Get C string
-s.vt->slice(&s, start, end); // Create slice
-s.vt->free(&s);              // Free memory
-
-// Convenience macros
-STR_PUSH(s, c)             // s.vt->push(&s, c)
-STR_APPEND(s, cstr)        // s.vt->append(&s, cstr)
-STR_CLEAR(s)               // s.vt->clear(&s)
-STR_GET(s, idx)            // s.vt->get(&s, idx)
-STR_LEN(s)                 // s.vt->len(&s)
-STR_CSTR(s)                // s.vt->cstr(&s)
-STR_SLICE(s, st, end)      // s.vt->slice(&s, st, end)
-STR_FREE(s)                // s.vt->free(&s)
-```
-
-### Option Vtable
-
-```c
-// Vtable method calls
-opt.vt->is_some(&opt);       // Check if has value
-opt.vt->is_none(&opt);       // Check if empty
-opt.vt->unwrap(&opt);        // Extract value (panics if None)
-opt.vt->unwrap_or(&opt, def); // Extract value or default
-
-// Convenience macros
-OPT_IS_SOME(opt)           // opt.vt->is_some(&opt)
-OPT_IS_NONE(opt)           // opt.vt->is_none(&opt)
-OPT_UNWRAP(opt)            // opt.vt->unwrap(&opt)
-OPT_UNWRAP_OR(opt, def)    // opt.vt->unwrap_or(&opt, def)
-```
-
-### Result Vtable
-
-```c
-// Vtable method calls
-res.vt->is_ok(&res);         // Check if success
-res.vt->is_err(&res);        // Check if error
-res.vt->unwrap_ok(&res);     // Extract success value
-res.vt->unwrap_err(&res);    // Extract error value
-res.vt->unwrap_ok_or(&res, def); // Extract success or default
-
-// Convenience macros
-RES_IS_OK(res)             // res.vt->is_ok(&res)
-RES_IS_ERR(res)            // res.vt->is_err(&res)
-RES_UNWRAP_OK(res)         // res.vt->unwrap_ok(&res)
-RES_UNWRAP_ERR(res)        // res.vt->unwrap_err(&res)
-RES_UNWRAP_OK_OR(res, def) // res.vt->unwrap_ok_or(&res, def)
-```
-
-### UniquePtr Vtable
-
-```c
-// Vtable method calls
-u.vt->get(&u);               // Get raw pointer
-u.vt->deref(&u);             // Dereference
-u.vt->move(&u);              // Transfer ownership
-u.vt->free(&u);              // Free memory
-
-// Convenience macros
-UPTR_GET(u)                // u.vt->get(&u)
-UPTR_DEREF(u)              // u.vt->deref(&u)
-UPTR_MOVE(u)               // u.vt->move(&u)
-UPTR_FREE(u)               // u.vt->free(&u)
-```
-
-### SharedPtr Vtable
-
-```c
-// Vtable method calls
-s.vt->get(&s);               // Get raw pointer
-s.vt->deref(&s);             // Dereference
-s.vt->clone(&s);             // Clone (increment ref count)
-s.vt->count(&s);             // Get reference count
-s.vt->release(&s);           // Release (decrement ref count)
-
-// Convenience macros
-SPTR_GET(s)                // s.vt->get(&s)
-SPTR_DEREF(s)              // s.vt->deref(&s)
-SPTR_CLONE(s)              // s.vt->clone(&s)
-SPTR_COUNT(s)              // s.vt->count(&s)
-SPTR_RELEASE(s)            // s.vt->release(&s)
-```
-
-### WeakPtr Vtable
-
-```c
-// Vtable method calls
-w.vt->wptr_is_expired(&w);   // Check if target has been freed
-w.vt->wptr_upgrade(&w);      // Upgrade to SharedPtr (returns Option)
-w.vt->wptr_release(&w);      // Release weak reference
-
-// Convenience macros
-WPTR_IS_EXPIRED(w)         // w.vt->wptr_is_expired(&w)
-WPTR_UPGRADE(w)            // w.vt->wptr_upgrade(&w)
-WPTR_RELEASE(w)            // w.vt->wptr_release(&w)
-```
-
-### Channel Vtable
-
-```c
-// Vtable method calls (channel is pointer-based)
-ch->vt->send(ch, val);       // Send value
-ch->vt->recv(ch);            // Receive value
-ch->vt->try_send(ch, val);   // Non-blocking send
-ch->vt->try_recv(ch);        // Non-blocking receive
-ch->vt->close(ch);           // Close channel
-ch->vt->is_closed(ch);       // Check if closed
-ch->vt->free(ch);            // Free channel
-
-// Convenience macros
-CHAN_SEND(ch, val)         // ch->vt->send(ch, val)
-CHAN_RECV(ch)              // ch->vt->recv(ch)
-CHAN_TRY_SEND(ch, val)     // ch->vt->try_send(ch, val)
-CHAN_TRY_RECV(ch)          // ch->vt->try_recv(ch)
-CHAN_CLOSE(ch)             // ch->vt->close(ch)
-CHAN_IS_CLOSED(ch)         // ch->vt->is_closed(ch)
-CHAN_FREE(ch)              // ch->vt->free(ch)
-```
+Monomorphic types (`String`) and typeless-accessor macros (`OPT_*`, `RES_*`) take no type argument, since the member layout is the same for every instantiation. See each type's section above for its full macro table.
 
 ### Complete Example
 
@@ -1480,29 +1511,29 @@ HASHMAP_DEFINE(i32, i32);
 i32 main(void) {
     // Vector with convenience macros
     Vec_i32 nums = vec_i32_new();
-    VEC_PUSH(nums, 10);
-    VEC_PUSH(nums, 20);
-    VEC_PUSH(nums, 30);
+    VEC_PUSH(i32, nums, 10);
+    VEC_PUSH(i32, nums, 20);
+    VEC_PUSH(i32, nums, 30);
     
-    printf("Vector length: %zu\n", VEC_LEN(nums));
+    printf("Vector length: %zu\n", VEC_LEN(i32, nums));
     
-    Option_i32 elem = VEC_GET(nums, 1);
+    Option_i32 elem = VEC_GET(i32, nums, 1);
     if (OPT_IS_SOME(elem)) {
         printf("Element at 1: %d\n", OPT_UNWRAP(elem));
     }
     
     // HashMap with convenience macros
     HashMap_i32_i32 scores = hashmap_i32_i32_new();
-    MAP_INSERT(scores, 1, 100);
-    MAP_INSERT(scores, 2, 200);
+    MAP_INSERT(i32, i32, scores, 1, 100);
+    MAP_INSERT(i32, i32, scores, 2, 200);
     
-    if (MAP_CONTAINS(scores, 1)) {
-        Option_i32 score = MAP_GET(scores, 1);
+    if (MAP_CONTAINS(i32, i32, scores, 1)) {
+        Option_i32 score = MAP_GET(i32, i32, scores, 1);
         printf("Score for 1: %d\n", OPT_UNWRAP_OR(score, 0));
     }
     
-    VEC_FREE(nums);
-    MAP_FREE(scores);
+    VEC_FREE(i32, nums);
+    MAP_FREE(i32, i32, scores);
     return 0;
 }
 ```
@@ -1511,7 +1542,7 @@ i32 main(void) {
 
 ## Serialization
 
-Text-based serialization using S-expression-like format.
+Text-based serialization using an S-expression format. Alongside the scalar helpers below, 0.2.0 adds a full S-expression tree API (`SExp`) that can parse, build, compare, and serialize arbitrarily nested lists.
 
 ```c
 #include <cyan/serialize.h>
@@ -1573,6 +1604,49 @@ i32 main(void) {
 }
 ```
 
+### S-Expression Trees (new in 0.2.0)
+
+```c
+#include <cyan/serialize.h>
+
+i32 main(void) {
+    // === Parsing ===
+    Result_SExpPtr_ParseError r = parse_sexp("(add 1 2.5 \"three\" (nested list))", NULL);
+    if (is_ok(r)) {
+        SExp *e = unwrap_ok(r);
+        // e->type is one of SEXP_INT, SEXP_DOUBLE, SEXP_STRING,
+        // SEXP_SYMBOL, SEXP_LIST
+        // Access: e->i (int), e->d (double), e->str (string/symbol),
+        //         e->list.items / e->list.len (list)
+        printf("List with %zu items\n", e->list.len);
+        sexp_free(e);  // Recursively frees the whole tree
+    }
+    
+    // === Building trees programmatically ===
+    SExp *list = sexp_list_new();
+    sexp_list_push(list, sexp_symbol("point"));  // push takes ownership
+    sexp_list_push(list, sexp_int(3));
+    sexp_list_push(list, sexp_double(1.5));
+    sexp_list_push(list, sexp_string("label"));
+    
+    // === Serializing ===
+    char *text = serialize_sexp(list);  // "(point 3 1.5 \"label\")"
+    printf("%s\n", text);
+    
+    // === Round-trip guarantee ===
+    Result_SExpPtr_ParseError back = parse_sexp(text, NULL);
+    // sexp_eq is structural equality (NaN == NaN is true here)
+    assert(sexp_eq(unwrap_ok(back), list));
+    
+    sexp_free(unwrap_ok(back));
+    sexp_free(list);
+    free(text);
+    return 0;
+}
+```
+
+`parse_sexp` rejects input nested deeper than `CYAN_SEXP_MAX_DEPTH` (default 1000, overridable before including headers).
+
 **Serialization Grammar:**
 ```
 value    := atom | list
@@ -1582,6 +1656,8 @@ string   := '"' char* '"'
 symbol   := alpha (alpha | digit | '_')*
 list     := '(' value* ')'
 ```
+
+As of 0.2.0 this grammar is fully implemented: `parse_sexp` handles every production, including symbols and arbitrarily nested lists.
 
 **Serialization API:**
 
@@ -1597,6 +1673,13 @@ list     := '(' value* ')'
 | `parse_double(input, end)` | Parse double, return Result |
 | `parse_string(input, end)` | Parse quoted string, return Result |
 | `pretty_print(str, indent)` | Format with indentation |
+| `parse_sexp(input, end)` | Parse full S-expression tree, return `Result_SExpPtr_ParseError` |
+| `serialize_sexp(e)` | Serialize tree back to text (caller frees) |
+| `sexp_int(v)` / `sexp_double(v)` / `sexp_string(s)` / `sexp_symbol(s)` | Construct atom nodes |
+| `sexp_list_new()` | Construct empty list node |
+| `sexp_list_push(list, child)` | Append child to list (takes ownership) |
+| `sexp_eq(a, b)` | Structural equality (NaN == NaN is true) |
+| `sexp_free(e)` | Recursively free a tree |
 
 ---
 
@@ -1607,6 +1690,19 @@ Configure the library by defining macros before including headers:
 ```c
 // Custom panic handler
 #define CYAN_PANIC(msg) my_panic_handler(msg)
+
+// Custom allocator hooks (override all three together)
+#define CYAN_MALLOC(size)        my_malloc(size)
+#define CYAN_REALLOC(ptr, size)  my_realloc(ptr, size)
+#define CYAN_FREE(ptr)           my_free(ptr)
+
+// Suppress short lowercase names (is_some, unwrap, map, filter, try_ok, ...)
+// The uppercase OPT_*/RES_* macros and the cyan_map/cyan_filter/cyan_reduce/
+// cyan_foreach names remain available.
+#define CYAN_NO_SHORT_NAMES
+
+// Maximum S-expression nesting depth accepted by parse_sexp (default 1000)
+#define CYAN_SEXP_MAX_DEPTH 1000
 
 // Collection settings
 #define CYAN_DEFAULT_CAPACITY 8   // Initial capacity for vectors, strings
@@ -1636,9 +1732,9 @@ Check for available features at compile time:
 ```c
 #include <cyan/cyan.h>
 
-// Library version
-#if CYAN_VERSION_AT_LEAST(0, 1, 0)
-    // Use features from v0.1.0+
+// Library version (version macros live in common.h)
+#if CYAN_VERSION_AT_LEAST(0, 2, 0)
+    // Use features from v0.2.0+
 #endif
 
 // Platform-specific types
@@ -1673,6 +1769,7 @@ Check for available features at compile time:
   - Nested functions in defer
 - POSIX system for coroutines (uses `ucontext.h`)
 - pthreads for thread-safe channels
+- **macOS note:** for the coroutine `ucontext` APIs to be visible, either include Cyan headers before any system header, or compile with `-D_XOPEN_SOURCE=700` (the project Makefile does this)
 
 ## Building Tests
 
@@ -1694,7 +1791,7 @@ See the `examples/` directory for complete example programs:
 | `05_smart_pointers.c` | Unique and shared pointers |
 | `06_pattern_matching.c` | Pattern matching on Option/Result |
 | `07_functional.c` | Functional primitives (map, filter, reduce) |
-| `08_vtable_api.c` | Vtable method-style API and convenience macros |
+| `08_vtable_api.c` | Method-style convenience macros |
 | `09_panic_handler.c` | Panic handler behavior and customization |
 | `16_bitset_integers.c` | Bitsets and custom bit-width integers |
 
@@ -1704,6 +1801,31 @@ cd examples
 make
 make run  # Run all examples
 ```
+
+## Changelog
+
+### 0.2.0
+
+**Breaking changes:**
+
+- **Vtable system removed.** All types are now plain structs (an `Option_i32` is just a `bool` + `i32`; a `Vec_i32` is just `data` + `len` + `cap`). Any `x.vt->fn(...)` or `ch->vt->fn(...)` call must become a standalone function call (`vec_i32_push(&v, x)`) or a convenience macro call (`VEC_PUSH(i32, v, x)`).
+- **Container macros are now type-first.** `VEC_PUSH(v, 42)` becomes `VEC_PUSH(i32, v, 42)`; likewise for `MAP_*(K, V, ...)`, `SLICE_*(T, ...)`, `CHAN_*(T, ...)`, `BS_*(N, ...)`, `FLAGS_*(N, ...)`, `UPTR_*/SPTR_*/WPTR_*(T, ...)`. `STR_*` (monomorphic) and `OPT_*`/`RES_*` (typeless member access) are unchanged.
+- **match.h sugar removed:** the no-op `some(var)`, `none()`, `ok(var)`, `err(var)` macros are gone; the `match_option`/`match_result` macros themselves are unchanged.
+- **`any` type alias removed** from common.h — use plain `void *`.
+- **Version macros moved to common.h** (they are no longer duplicated in other headers).
+
+**Additions:**
+
+- Option/Result combinators: `expect`, `and_then`, `or_else`, `ok_or`, `try_some`, `expect_ok`, `and_then_result`, `try_ok` (plus their always-available `OPT_*`/`RES_*` forms)
+- String utilities: `string_find`, `string_contains`, `string_starts_with`, `string_ends_with`, `string_trim`, `string_eq`, `string_split_next`
+- String-keyed hashmap: `HASHMAP_STR_DEFINE(V)` with content-hashed, owned keys
+- Vector operations: `insert`, `remove`, `clear`, `reserve`, `extend`
+- Full S-expression parser: `parse_sexp`/`serialize_sexp`/`sexp_eq`/`sexp_free` and tree constructors — the documented grammar is now fully implemented
+- Allocator hooks: `CYAN_MALLOC`/`CYAN_REALLOC`/`CYAN_FREE`
+- `CYAN_NO_SHORT_NAMES` to suppress the short lowercase names
+- `WPTR_CLONE`/`weak_T_clone` for weak pointers
+
+**Fixes:** 0.1.x -> 0.2.0 also includes the fixes from the 37-bug audit, among them: `defer_free` now NULLs the pointer after freeing, unbuffered channels get correct rendezvous/`CHAN_WOULD_BLOCK` semantics, overflow guards in growth and parsing paths, and single-evaluation convenience macros.
 
 ## License
 

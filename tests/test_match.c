@@ -230,8 +230,10 @@ static MatchTest match_tests[] = {
 
 #define NUM_MATCH_TESTS (sizeof(match_tests) / sizeof(match_tests[0]))
 
-int run_match_tests(theft_seed seed) {
+int run_match_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_MATCH_TESTS;
     
     printf("\nPattern Matching Tests:\n");
     

@@ -43,6 +43,14 @@ Result_i32_const_charp parse_positive_int(const char *str) {
     return Ok(i32, const_charp, (i32)val);
 }
 
+// Parse two integers and add them; try_ok propagates the first Err
+// (Rust-`?`-style: the enclosing function must return the same Result type)
+Result_i32_const_charp sum_parsed(const char *a, const char *b) {
+    i32 x = try_ok(parse_positive_int(a));
+    i32 y = try_ok(parse_positive_int(b));
+    return Ok(i32, const_charp, x + y);
+}
+
 // Divide two numbers safely
 Result_f64_const_charp safe_divide(f64 a, f64 b) {
     if (b == 0.0) {
@@ -107,28 +115,35 @@ i32 main(void) {
         }
     }
     
-    // Example 6: Vtable Method-Style API
-    printf("\n6. Vtable Method-Style API:\n");
-    Result_i32_const_charp ok_vt = Ok(i32, const_charp, 200);
-    Result_i32_const_charp err_vt = Err(i32, const_charp, "vtable error");
-    
-    // Direct vtable access
-    printf("   Direct vtable access:\n");
-    printf("      ok_vt.vt->res_is_ok(&ok_vt) = %s\n", ok_vt.vt->res_is_ok(&ok_vt) ? "yes" : "no");
-    printf("      ok_vt.vt->res_unwrap_ok(&ok_vt) = %d\n", ok_vt.vt->res_unwrap_ok(&ok_vt));
-    printf("      err_vt.vt->res_unwrap_err(&err_vt) = \"%s\"\n", err_vt.vt->res_unwrap_err(&err_vt));
-    
-    // Convenience macros (cleaner syntax)
+    // Example 6: Two Equivalent Call Styles
+    printf("\n6. Two Equivalent Call Styles:\n");
+    Result_i32_const_charp ok_res = Ok(i32, const_charp, 200);
+    Result_i32_const_charp err_res = Err(i32, const_charp, "example error");
+
+    // Style 1: Standalone per-type functions
+    printf("   Standalone functions:\n");
+    printf("      result_i32_const_charp_is_ok(&ok_res) = %s\n",
+           result_i32_const_charp_is_ok(&ok_res) ? "yes" : "no");
+    printf("      result_i32_const_charp_unwrap_ok(&ok_res) = %d\n",
+           result_i32_const_charp_unwrap_ok(&ok_res));
+    printf("      result_i32_const_charp_unwrap_err(&err_res) = \"%s\"\n",
+           result_i32_const_charp_unwrap_err(&err_res));
+
+    // Style 2: Convenience macros (cleaner syntax)
     printf("   Convenience macros:\n");
-    printf("      RES_IS_OK(ok_vt) = %s\n", RES_IS_OK(ok_vt) ? "yes" : "no");
-    printf("      RES_IS_ERR(err_vt) = %s\n", RES_IS_ERR(err_vt) ? "yes" : "no");
-    printf("      RES_UNWRAP_OK(ok_vt) = %d\n", RES_UNWRAP_OK(ok_vt));
-    printf("      RES_UNWRAP_OK_OR(err_vt, -1) = %d\n", RES_UNWRAP_OK_OR(err_vt, -1));
-    
-    // All Result_i32_const_charp instances share the same vtable
-    printf("   Shared vtable (memory efficient):\n");
-    printf("      success.vt == ok_vt.vt: %s\n", success.vt == ok_vt.vt ? "yes" : "no");
-    
+    printf("      RES_IS_OK(ok_res) = %s\n", RES_IS_OK(ok_res) ? "yes" : "no");
+    printf("      RES_IS_ERR(err_res) = %s\n", RES_IS_ERR(err_res) ? "yes" : "no");
+    printf("      RES_UNWRAP_OK(ok_res) = %d\n", RES_UNWRAP_OK(ok_res));
+    printf("      RES_UNWRAP_OK_OR(err_res, -1) = %d\n", RES_UNWRAP_OK_OR(err_res, -1));
+
+    // Example 7: Error propagation with try_ok (like Rust's `?`)
+    printf("\n7. Error Propagation with try_ok:\n");
+    Result_i32_const_charp summed = sum_parsed("40", "2");
+    printf("   sum_parsed(\"40\", \"2\") = Ok(%d)\n", unwrap_ok(summed));
+
+    Result_i32_const_charp propagated = sum_parsed("40", "oops");
+    printf("   sum_parsed(\"40\", \"oops\") = Err(\"%s\")\n", unwrap_err(propagated));
+
     printf("\n=== Done ===\n");
     return 0;
 }

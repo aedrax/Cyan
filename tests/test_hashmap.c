@@ -7,6 +7,8 @@
  * - Property 43: HashMap get on missing key returns None
  * - Property 44: HashMap iteration visits all entries
  * - Property 45: HashMap remove then get returns None
+ * - Property 46: HashMap macro == function behavioral equivalence
+ * - Property 47: HashMap_str_int content-keyed operations
  */
 
 #include <stdio.h>
@@ -20,6 +22,7 @@
 OPTION_DEFINE(int);
 HASHMAP_DEFINE(int, int);
 HASHMAP_ITER_DEFINE(int, int);
+HASHMAP_STR_DEFINE(int);
 
 /*============================================================================
  * Property 42: HashMap insert-get round-trip
@@ -32,12 +35,7 @@ static enum theft_trial_res prop_insert_get_roundtrip(struct theft *t, void *arg
     int seed = (int)(*val_ptr);
     
     HashMap_int_int m = hashmap_int_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (m.vt == NULL) {
-        hashmap_int_int_free(&m);
-        return THEFT_TRIAL_FAIL;
-    }
+
     
     /* Insert multiple key-value pairs */
     int keys[20];
@@ -90,12 +88,7 @@ static enum theft_trial_res prop_get_missing_key(struct theft *t, void *arg1) {
     
     /* Test on empty map */
     HashMap_int_int empty_m = hashmap_int_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (empty_m.vt == NULL) {
-        hashmap_int_int_free(&empty_m);
-        return THEFT_TRIAL_FAIL;
-    }
+
     
     Option_int empty_opt = hashmap_int_int_get(&empty_m, seed);
     if (!is_none(empty_opt)) {
@@ -143,12 +136,7 @@ static enum theft_trial_res prop_iteration(struct theft *t, void *arg1) {
     int seed = (int)(*val_ptr);
     
     HashMap_int_int m = hashmap_int_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (m.vt == NULL) {
-        hashmap_int_int_free(&m);
-        return THEFT_TRIAL_FAIL;
-    }
+
     
     /* Insert entries and track them - use fixed size arrays to avoid allocation issues */
     int num_entries = 5 + (((unsigned int)seed) % 15);  /* 5-19 entries */
@@ -227,12 +215,7 @@ static enum theft_trial_res prop_remove(struct theft *t, void *arg1) {
     int seed = (int)(*val_ptr);
     
     HashMap_int_int m = hashmap_int_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (m.vt == NULL) {
-        hashmap_int_int_free(&m);
-        return THEFT_TRIAL_FAIL;
-    }
+
     
     /* Insert entries */
     int num_entries = 10;
@@ -292,170 +275,201 @@ static enum theft_trial_res prop_remove(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
- * Property 1 (vtable): Shared vtable instances (HashMap)
- * For any two instances of HashMap_K_V, their vtable pointers shall be equal
- * (point to the same address).
+ * Property 46: HashMap macro == function behavioral equivalence
+ * For any HashMap_K_V instance and any valid key-value pair, the type-first
+ * MAP_* macros produce identical results to calling the standalone
+ * hashmap_K_V_* functions.
  *============================================================================*/
 
-static enum theft_trial_res prop_shared_vtable(struct theft *t, void *arg1) {
-    (void)t;
-    int64_t *val_ptr = (int64_t *)arg1;
-    int val = (int)(*val_ptr);
-    
-    /* Create multiple hashmap instances using different constructors */
-    HashMap_int_int m1 = hashmap_int_int_new();
-    HashMap_int_int m2 = hashmap_int_int_new();
-    HashMap_int_int m3 = hashmap_int_int_with_capacity(10);
-    HashMap_int_int m4 = hashmap_int_int_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
-    
-    /* All vtable pointers should be non-null */
-    if (m1.vt == NULL || m2.vt == NULL || m3.vt == NULL || m4.vt == NULL) {
-        hashmap_int_int_free(&m1);
-        hashmap_int_int_free(&m2);
-        hashmap_int_int_free(&m3);
-        hashmap_int_int_free(&m4);
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    /* All vtable pointers should point to the same address */
-    if (m1.vt != m2.vt || m2.vt != m3.vt || m3.vt != m4.vt) {
-        hashmap_int_int_free(&m1);
-        hashmap_int_int_free(&m2);
-        hashmap_int_int_free(&m3);
-        hashmap_int_int_free(&m4);
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    hashmap_int_int_free(&m1);
-    hashmap_int_int_free(&m2);
-    hashmap_int_int_free(&m3);
-    hashmap_int_int_free(&m4);
-    return THEFT_TRIAL_PASS;
-}
-
-/*============================================================================
- * Property 3 (vtable): HashMap vtable behavioral equivalence
- * For any HashMap_K_V instance, any valid key-value pair, calling operations
- * through the vtable (m.vt->insert, m.vt->get, m.vt->remove) shall produce
- * identical results to calling the standalone functions.
- *============================================================================*/
-
-static enum theft_trial_res prop_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+static enum theft_trial_res prop_macro_fn_equivalence(struct theft *t, void *arg1) {
     (void)t;
     int64_t *val_ptr = (int64_t *)arg1;
     int seed = (int)(*val_ptr);
-    
-    /* Create two identical hashmaps - one for vtable ops, one for standalone ops */
-    HashMap_int_int m_vtable = hashmap_int_int_new();
-    HashMap_int_int m_standalone = hashmap_int_int_new();
-    
-    /* Test insert equivalence: vtable vs standalone */
+
+    /* Create two identical hashmaps - one for macro ops, one for standalone ops */
+    HashMap_int_int m_macro = hashmap_int_int_new();
+    HashMap_int_int m_fn = hashmap_int_int_new();
+
+    /* Test insert equivalence: macro vs standalone */
     int keys[5];
     int values[5];
     for (int i = 0; i < 5; i++) {
         keys[i] = seed + i * 7;
         values[i] = seed * 3 + i;
-        
-        m_vtable.vt->insert(&m_vtable, keys[i], values[i]);
-        hashmap_int_int_insert(&m_standalone, keys[i], values[i]);
+
+        MAP_INSERT(int, int, m_macro, keys[i], values[i]);
+        hashmap_int_int_insert(&m_fn, keys[i], values[i]);
     }
-    
+
     /* Test len equivalence */
-    size_t len_vtable = m_vtable.vt->len(&m_vtable);
-    size_t len_standalone = hashmap_int_int_len(&m_standalone);
-    
-    if (len_vtable != len_standalone) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    if (MAP_LEN(int, int, m_macro) != hashmap_int_int_len(&m_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test get equivalence for all inserted keys */
     for (int i = 0; i < 5; i++) {
-        Option_int opt_vtable = m_vtable.vt->get(&m_vtable, keys[i]);
-        Option_int opt_standalone = hashmap_int_int_get(&m_standalone, keys[i]);
-        
-        if (is_some(opt_vtable) != is_some(opt_standalone)) {
-            hashmap_int_int_free(&m_vtable);
-            hashmap_int_int_free(&m_standalone);
+        Option_int opt_macro = MAP_GET(int, int, m_macro, keys[i]);
+        Option_int opt_fn = hashmap_int_int_get(&m_fn, keys[i]);
+
+        if (is_some(opt_macro) != is_some(opt_fn)) {
+            hashmap_int_int_free(&m_macro);
+            hashmap_int_int_free(&m_fn);
             return THEFT_TRIAL_FAIL;
         }
-        
-        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
-            hashmap_int_int_free(&m_vtable);
-            hashmap_int_int_free(&m_standalone);
+
+        if (is_some(opt_macro) && unwrap(opt_macro) != unwrap(opt_fn)) {
+            hashmap_int_int_free(&m_macro);
+            hashmap_int_int_free(&m_fn);
             return THEFT_TRIAL_FAIL;
         }
     }
-    
+
     /* Test get for missing key equivalence */
     int missing_key = seed + 1000;
-    Option_int missing_vtable = m_vtable.vt->get(&m_vtable, missing_key);
-    Option_int missing_standalone = hashmap_int_int_get(&m_standalone, missing_key);
-    
-    if (is_none(missing_vtable) != is_none(missing_standalone)) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    Option_int missing_macro = MAP_GET(int, int, m_macro, missing_key);
+    Option_int missing_fn = hashmap_int_int_get(&m_fn, missing_key);
+
+    if (is_none(missing_macro) != is_none(missing_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test contains equivalence */
-    bool contains_vtable = m_vtable.vt->contains(&m_vtable, keys[0]);
-    bool contains_standalone = hashmap_int_int_contains(&m_standalone, keys[0]);
-    
-    if (contains_vtable != contains_standalone) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    if (MAP_CONTAINS(int, int, m_macro, keys[0]) != hashmap_int_int_contains(&m_fn, keys[0])) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test contains for missing key */
-    bool missing_contains_vtable = m_vtable.vt->contains(&m_vtable, missing_key);
-    bool missing_contains_standalone = hashmap_int_int_contains(&m_standalone, missing_key);
-    
-    if (missing_contains_vtable != missing_contains_standalone) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    if (MAP_CONTAINS(int, int, m_macro, missing_key) != hashmap_int_int_contains(&m_fn, missing_key)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test remove equivalence */
-    Option_int remove_vtable = m_vtable.vt->remove(&m_vtable, keys[0]);
-    Option_int remove_standalone = hashmap_int_int_remove(&m_standalone, keys[0]);
-    
-    if (is_some(remove_vtable) != is_some(remove_standalone)) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    Option_int remove_macro = MAP_REMOVE(int, int, m_macro, keys[0]);
+    Option_int remove_fn = hashmap_int_int_remove(&m_fn, keys[0]);
+
+    if (is_some(remove_macro) != is_some(remove_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    if (is_some(remove_vtable) && unwrap(remove_vtable) != unwrap(remove_standalone)) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+
+    if (is_some(remove_macro) && unwrap(remove_macro) != unwrap(remove_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Verify lengths are still equal after remove */
-    if (m_vtable.vt->len(&m_vtable) != hashmap_int_int_len(&m_standalone)) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    if (MAP_LEN(int, int, m_macro) != hashmap_int_int_len(&m_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test remove for missing key equivalence */
-    Option_int remove_missing_vtable = m_vtable.vt->remove(&m_vtable, missing_key);
-    Option_int remove_missing_standalone = hashmap_int_int_remove(&m_standalone, missing_key);
-    
-    if (is_none(remove_missing_vtable) != is_none(remove_missing_standalone)) {
-        hashmap_int_int_free(&m_vtable);
-        hashmap_int_int_free(&m_standalone);
+    Option_int remove_missing_macro = MAP_REMOVE(int, int, m_macro, missing_key);
+    Option_int remove_missing_fn = hashmap_int_int_remove(&m_fn, missing_key);
+
+    if (is_none(remove_missing_macro) != is_none(remove_missing_fn)) {
+        hashmap_int_int_free(&m_macro);
+        hashmap_int_int_free(&m_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* Cleanup using vtable free for one, standalone for other */
-    m_vtable.vt->free(&m_vtable);
-    hashmap_int_int_free(&m_standalone);
-    
+
+    /* Cleanup using MAP_FREE for macro, standalone for other */
+    MAP_FREE(int, int, m_macro);
+    hashmap_int_int_free(&m_fn);
+
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 47: HashMap_str_int content-keyed operations
+ * String-keyed maps hash key CONTENT, not pointer values: content-equal but
+ * pointer-distinct keys address the same entry, overwrite keeps len, and
+ * free after many inserts releases all owned key copies.
+ *============================================================================*/
+
+static enum theft_trial_res prop_str_map_content_keys(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int seed = (int)(*val_ptr % 100000);
+
+    HashMap_str_int m = hashmap_str_int_new();
+
+    /* Insert with a key built in one local buffer */
+    char key_a[32];
+    snprintf(key_a, sizeof(key_a), "key_%d", seed);
+    hashmap_str_int_insert(&m, key_a, seed);
+
+    /* Look up with a content-equal key built in a DIFFERENT buffer */
+    char key_b[32];
+    snprintf(key_b, sizeof(key_b), "key_%d", seed);
+    Option_int got = hashmap_str_int_get(&m, key_b);
+    if (!is_some(got) || unwrap(got) != seed) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (!hashmap_str_int_contains(&m, key_b)) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Overwriting through the pointer-distinct key keeps len at 1 */
+    hashmap_str_int_insert(&m, key_b, seed + 1);
+    if (hashmap_str_int_len(&m) != 1) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    Option_int overwritten = hashmap_str_int_get(&m, key_a);
+    if (!is_some(overwritten) || unwrap(overwritten) != seed + 1) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Remove through yet another content-equal buffer */
+    char key_c[32];
+    snprintf(key_c, sizeof(key_c), "key_%d", seed);
+    Option_int removed = hashmap_str_int_remove(&m, key_c);
+    if (!is_some(removed) || unwrap(removed) != seed + 1) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (hashmap_str_int_len(&m) != 0 || hashmap_str_int_contains(&m, key_a)) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Many inserts (forces a resize past the initial capacity), then free;
+     * a later ASan run validates that all owned key copies are released */
+    for (int i = 0; i < 50; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "bulk_%d_%d", seed, i);
+        hashmap_str_int_insert(&m, key, i);
+    }
+    if (hashmap_str_int_len(&m) != 50) {
+        hashmap_str_int_free(&m);
+        return THEFT_TRIAL_FAIL;
+    }
+    for (int i = 0; i < 50; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "bulk_%d_%d", seed, i);
+        Option_int v = hashmap_str_int_get(&m, key);
+        if (!is_some(v) || unwrap(v) != i) {
+            hashmap_str_int_free(&m);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    hashmap_str_int_free(&m);
     return THEFT_TRIAL_PASS;
 }
 
@@ -494,21 +508,23 @@ static HashMapTest hashmap_tests[] = {
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 1 (vtable): Shared vtable instances (HashMap)",
-        prop_shared_vtable,
+        "Property 46: HashMap macro == function behavioral equivalence",
+        prop_macro_fn_equivalence,
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 3 (vtable): HashMap vtable behavioral equivalence",
-        prop_vtable_behavioral_equivalence,
+        "Property 47: HashMap_str_int content-keyed operations",
+        prop_str_map_content_keys,
         THEFT_BUILTIN_int64_t
     },
 };
 
 #define NUM_HASHMAP_TESTS (sizeof(hashmap_tests) / sizeof(hashmap_tests[0]))
 
-int run_hashmap_tests(theft_seed seed) {
+int run_hashmap_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_HASHMAP_TESTS;
     
     printf("\nHashMap Type Tests:\n");
     

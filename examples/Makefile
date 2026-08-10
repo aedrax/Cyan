@@ -20,7 +20,7 @@ EXAMPLES = \
 	05_smart_pointers \
 	06_pattern_matching \
 	07_functional \
-	08_vtable_api \
+	08_method_macros \
 	09_panic_handler \
 	10_channel_communication \
 	11_hashmap_dictionary \

@@ -1,13 +1,16 @@
 /**
  * @file coro.h
- * @brief Stackful coroutines for cooperative multitasking
- * 
+ * @brief Stackful coroutines for cooperative multitasking (EXPERIMENTAL)
+ *
+ * EXPERIMENTAL: the implementation relies on POSIX ucontext, which has been
+ * deprecated on macOS since 10.6 and does not exist on non-POSIX platforms
+ * (Windows). It works on current Linux and macOS toolchains, but the
+ * underlying primitive has no long-term platform guarantees. The API may
+ * change if the backend is replaced.
+ *
  * This header provides stackful coroutine support that allows writing
  * asynchronous code in a sequential style. Coroutines can yield control
  * back to the caller and resume from where they left off.
- * 
- * The implementation uses POSIX ucontext for context switching on
- * supported platforms, providing true stackful coroutines.
  * 
  * Usage:
  *   void my_coro(Coro *self, void *arg) {
@@ -123,7 +126,7 @@ static inline void _coro_yield_impl(Coro *c, const void *value, size_t size) {
              * yield macro's block exits. Copy into heap storage owned by
              * the Coro so the value stays valid until the next yield. */
             if (size > c->yield_heap_cap) {
-                void *new_heap = realloc(c->yield_heap, size);
+                void *new_heap = CYAN_REALLOC(c->yield_heap, size);
                 if (!new_heap) CYAN_PANIC("coro yield: allocation failed");
                 c->yield_heap = new_heap;
                 c->yield_heap_cap = size;
@@ -170,15 +173,15 @@ static inline Coro *coro_new(CoroFn fn, void *arg, size_t stack_size) {
         stack_size = CYAN_CORO_STACK_SIZE;
     }
     
-    Coro *c = (Coro *)malloc(sizeof(Coro));
+    Coro *c = (Coro *)CYAN_MALLOC(sizeof(Coro));
     if (!c) {
         CYAN_PANIC("coro_new: allocation failed");
         return NULL;
     }
     
-    c->stack = malloc(stack_size);
+    c->stack = CYAN_MALLOC(stack_size);
     if (!c->stack) {
-        free(c);
+        CYAN_FREE(c);
         CYAN_PANIC("coro_new: stack allocation failed");
         return NULL;
     }
@@ -194,8 +197,8 @@ static inline Coro *coro_new(CoroFn fn, void *arg, size_t stack_size) {
     
     /* Initialize coroutine context */
     if (getcontext(&c->coro_ctx) == -1) {
-        free(c->stack);
-        free(c);
+        CYAN_FREE(c->stack);
+        CYAN_FREE(c);
         CYAN_PANIC("coro_new: getcontext failed");
         return NULL;
     }
@@ -358,10 +361,10 @@ static inline CoroStatus coro_status(Coro *c) {
 static inline void coro_free(Coro *c) {
     if (c) {
         if (c->stack) {
-            free(c->stack);
+            CYAN_FREE(c->stack);
         }
-        free(c->yield_heap);
-        free(c);
+        CYAN_FREE(c->yield_heap);
+        CYAN_FREE(c);
     }
 }
 

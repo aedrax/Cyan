@@ -73,7 +73,7 @@ RESULT_DEFINE(ParsedString, ParseError);
  */
 static inline char *serialize_int(int val) {
     /* Max int string: "-2147483648" = 11 chars + null */
-    char *buf = (char *)malloc(16);
+    char *buf = (char *)CYAN_MALLOC(16);
     if (!buf) CYAN_PANIC("allocation failed");
     snprintf(buf, 16, "%d", val);
     return buf;
@@ -92,7 +92,7 @@ static inline char *serialize_int(int val) {
  */
 static inline char *serialize_double(double val) {
     /* Use enough buffer for full precision double */
-    char *buf = (char *)malloc(32);
+    char *buf = (char *)CYAN_MALLOC(32);
     if (!buf) CYAN_PANIC("allocation failed");
     
     /* Handle special cases */
@@ -120,7 +120,7 @@ static inline char *serialize_double(double val) {
  */
 static inline char *serialize_string(const char *str) {
     if (!str) {
-        char *buf = (char *)malloc(3);
+        char *buf = (char *)CYAN_MALLOC(3);
         if (!buf) CYAN_PANIC("allocation failed");
         strcpy(buf, "\"\"");
         return buf;
@@ -140,7 +140,7 @@ static inline char *serialize_string(const char *str) {
     }
     len += 1;  /* Null terminator */
     
-    char *buf = (char *)malloc(len);
+    char *buf = (char *)CYAN_MALLOC(len);
     if (!buf) CYAN_PANIC("allocation failed");
     
     char *out = buf;
@@ -342,7 +342,7 @@ static inline Result_ParsedString_ParseError parse_string(const char *input, con
     }
     
     /* Allocate and fill buffer */
-    char *buf = (char *)malloc(len + 1);
+    char *buf = (char *)CYAN_MALLOC(len + 1);
     if (!buf) CYAN_PANIC("allocation failed");
     
     char *out = buf;
@@ -403,7 +403,7 @@ static inline Result_ParsedString_ParseError parse_string(const char *input, con
  * @return Newly allocated string (caller must free)
  */
 static inline char *serialize_long(long val) {
-    char *buf = (char *)malloc(24);
+    char *buf = (char *)CYAN_MALLOC(24);
     if (!buf) CYAN_PANIC("allocation failed");
     snprintf(buf, 24, "%ld", val);
     return buf;
@@ -415,7 +415,7 @@ static inline char *serialize_long(long val) {
  * @return Newly allocated string (caller must free)
  */
 static inline char *serialize_float(float val) {
-    char *buf = (char *)malloc(32);
+    char *buf = (char *)CYAN_MALLOC(32);
     if (!buf) CYAN_PANIC("allocation failed");
     
     if (isnan(val)) {
@@ -469,7 +469,7 @@ static inline void _cyan_pp_reserve(char **buf, size_t *cap, size_t len, size_t 
         }
         new_cap *= 2;
     }
-    char *new_buf = (char *)realloc(*buf, new_cap);
+    char *new_buf = (char *)CYAN_REALLOC(*buf, new_cap);
     if (!new_buf) CYAN_PANIC("allocation failed");
     *buf = new_buf;
     *cap = new_cap;
@@ -477,7 +477,7 @@ static inline void _cyan_pp_reserve(char **buf, size_t *cap, size_t len, size_t 
 
 static inline char *pretty_print(const char *serialized, int indent_width) {
     if (!serialized) {
-        char *empty = (char *)malloc(1);
+        char *empty = (char *)CYAN_MALLOC(1);
         if (!empty) CYAN_PANIC("allocation failed");
         empty[0] = '\0';
         return empty;
@@ -490,7 +490,7 @@ static inline char *pretty_print(const char *serialized, int indent_width) {
      * heap on inputs like "((((((...") */
     size_t input_len = strlen(serialized);
     size_t cap = input_len + 16;
-    char *buf = (char *)malloc(cap);
+    char *buf = (char *)CYAN_MALLOC(cap);
     if (!buf) CYAN_PANIC("allocation failed");
 
     size_t len = 0;
@@ -587,8 +587,374 @@ static inline char *pretty_print(const char *serialized, int indent_width) {
     buf[len] = '\0';
 
     /* Shrink buffer to actual size */
-    char *result = (char *)realloc(buf, len + 1);
+    char *result = (char *)CYAN_REALLOC(buf, len + 1);
     return result ? result : buf;
+}
+
+/*============================================================================
+ * S-Expression Values (SExp)
+ *============================================================================
+ * A tagged tree type implementing the full documented grammar, including
+ * nested lists and symbols. parse_sexp/serialize_sexp round-trip:
+ *   parse(serialize(x)) is structurally equal to x (see sexp_eq).
+ */
+
+/**
+ * @brief Maximum nesting depth accepted by parse_sexp
+ * Override by defining CYAN_SEXP_MAX_DEPTH before including headers.
+ */
+#ifndef CYAN_SEXP_MAX_DEPTH
+#define CYAN_SEXP_MAX_DEPTH 1000
+#endif
+
+/**
+ * @brief Kind of an S-expression node
+ */
+typedef enum {
+    SEXP_INT,     /**< Integer atom (long) */
+    SEXP_DOUBLE,  /**< Floating-point atom (includes nan/inf) */
+    SEXP_STRING,  /**< Quoted string atom */
+    SEXP_SYMBOL,  /**< Bare symbol atom */
+    SEXP_LIST     /**< List of child S-expressions */
+} SExpType;
+
+/**
+ * @brief Heap-allocated S-expression node
+ */
+typedef struct SExp {
+    SExpType type;
+    union {
+        long i;                   /* SEXP_INT */
+        double d;                 /* SEXP_DOUBLE */
+        char *str;                /* SEXP_STRING / SEXP_SYMBOL (owned) */
+        struct {                  /* SEXP_LIST */
+            struct SExp **items;  /* owned child pointers */
+            size_t len;
+            size_t cap;
+        } list;
+    };
+} SExp;
+
+/* Result type for S-expression parsing */
+typedef SExp *SExpPtr;
+RESULT_DEFINE(SExpPtr, ParseError);
+
+/*----------------------------------------------------------------------------
+ * Constructors and destructor
+ *----------------------------------------------------------------------------*/
+
+static inline SExp *_sexp_alloc(SExpType type) {
+    SExp *e = (SExp *)CYAN_MALLOC(sizeof(SExp));
+    if (!e) CYAN_PANIC("allocation failed");
+    memset(e, 0, sizeof(SExp));
+    e->type = type;
+    return e;
+}
+
+/** @brief Create an integer atom */
+static inline SExp *sexp_int(long value) {
+    SExp *e = _sexp_alloc(SEXP_INT);
+    e->i = value;
+    return e;
+}
+
+/** @brief Create a double atom */
+static inline SExp *sexp_double(double value) {
+    SExp *e = _sexp_alloc(SEXP_DOUBLE);
+    e->d = value;
+    return e;
+}
+
+/** @brief Create a string atom (copies the input) */
+static inline SExp *sexp_string(const char *value) {
+    SExp *e = _sexp_alloc(SEXP_STRING);
+    size_t n = value ? strlen(value) + 1 : 1;
+    e->str = (char *)CYAN_MALLOC(n);
+    if (!e->str) CYAN_PANIC("allocation failed");
+    memcpy(e->str, value ? value : "", n);
+    return e;
+}
+
+/** @brief Create a symbol atom (copies the input) */
+static inline SExp *sexp_symbol(const char *name) {
+    SExp *e = sexp_string(name);
+    e->type = SEXP_SYMBOL;
+    return e;
+}
+
+/** @brief Create an empty list */
+static inline SExp *sexp_list_new(void) {
+    return _sexp_alloc(SEXP_LIST);
+}
+
+/** @brief Free an S-expression tree recursively (NULL is a no-op) */
+static inline void sexp_free(SExp *e) {
+    if (!e) return;
+    switch (e->type) {
+        case SEXP_STRING:
+        case SEXP_SYMBOL:
+            CYAN_FREE(e->str);
+            break;
+        case SEXP_LIST:
+            for (size_t i = 0; i < e->list.len; i++) {
+                sexp_free(e->list.items[i]);
+            }
+            CYAN_FREE(e->list.items);
+            break;
+        default:
+            break;
+    }
+    CYAN_FREE(e);
+}
+
+/**
+ * @brief Append a child to a list (takes ownership of child)
+ * @note Panics if list is not SEXP_LIST or on allocation failure
+ */
+static inline void sexp_list_push(SExp *list, SExp *child) {
+    if (!list || list->type != SEXP_LIST) CYAN_PANIC("sexp_list_push: not a list");
+    if (list->list.len >= list->list.cap) {
+        size_t new_cap = list->list.cap == 0 ? CYAN_DEFAULT_CAPACITY
+                                             : list->list.cap * CYAN_GROWTH_FACTOR;
+        if (new_cap > SIZE_MAX / sizeof(SExp *)) CYAN_PANIC("sexp list overflow");
+        SExp **items = (SExp **)CYAN_REALLOC(list->list.items, new_cap * sizeof(SExp *));
+        if (!items) CYAN_PANIC("allocation failed");
+        list->list.items = items;
+        list->list.cap = new_cap;
+    }
+    list->list.items[list->list.len++] = child;
+}
+
+/**
+ * @brief Structural equality of two S-expression trees
+ * @note NaN doubles compare equal to each other (so round-trips verify)
+ */
+static inline bool sexp_eq(const SExp *a, const SExp *b) {
+    if (a == b) return true;
+    if (!a || !b || a->type != b->type) return false;
+    switch (a->type) {
+        case SEXP_INT:    return a->i == b->i;
+        case SEXP_DOUBLE:
+            if (isnan(a->d) && isnan(b->d)) return true;
+            return a->d == b->d;
+        case SEXP_STRING:
+        case SEXP_SYMBOL: return strcmp(a->str, b->str) == 0;
+        case SEXP_LIST:
+            if (a->list.len != b->list.len) return false;
+            for (size_t i = 0; i < a->list.len; i++) {
+                if (!sexp_eq(a->list.items[i], b->list.items[i])) return false;
+            }
+            return true;
+    }
+    return false;
+}
+
+/*----------------------------------------------------------------------------
+ * Parsing
+ *----------------------------------------------------------------------------*/
+
+/* Internal: parse one value at *input; on success advances *end */
+static inline Result_SExpPtr_ParseError _parse_sexp_value(
+    const char *input, const char **end, int depth
+) {
+    if (depth > CYAN_SEXP_MAX_DEPTH) {
+        return Err(SExpPtr, ParseError, "maximum nesting depth exceeded");
+    }
+
+    input = skip_whitespace(input);
+    if (*input == '\0') {
+        return Err(SExpPtr, ParseError, "empty input");
+    }
+
+    /* List */
+    if (*input == '(') {
+        input++;
+        SExp *list = sexp_list_new();
+        for (;;) {
+            input = skip_whitespace(input);
+            if (*input == ')') {
+                input++;
+                break;
+            }
+            if (*input == '\0') {
+                sexp_free(list);
+                return Err(SExpPtr, ParseError, "unterminated list");
+            }
+            const char *child_end;
+            Result_SExpPtr_ParseError child = _parse_sexp_value(input, &child_end, depth + 1);
+            if (!child.is_ok_flag) {
+                sexp_free(list);
+                return child;
+            }
+            sexp_list_push(list, child.ok_value);
+            input = child_end;
+        }
+        *end = input;
+        return Ok(SExpPtr, ParseError, list);
+    }
+
+    /* Quoted string */
+    if (*input == '"') {
+        const char *str_end;
+        Result_ParsedString_ParseError s = parse_string(input, &str_end);
+        if (!s.is_ok_flag) {
+            return Err(SExpPtr, ParseError, s.err_value);
+        }
+        SExp *e = _sexp_alloc(SEXP_STRING);
+        e->str = s.ok_value; /* take ownership of the parsed buffer */
+        *end = str_end;
+        return Ok(SExpPtr, ParseError, e);
+    }
+
+    /* Special doubles (match serialize_double output) */
+    if (strncmp(input, "nan", 3) == 0 && !isalnum((unsigned char)input[3]) && input[3] != '_') {
+        *end = input + 3;
+        return Ok(SExpPtr, ParseError, sexp_double(NAN));
+    }
+    if (strncmp(input, "inf", 3) == 0 && !isalnum((unsigned char)input[3]) && input[3] != '_') {
+        *end = input + 3;
+        return Ok(SExpPtr, ParseError, sexp_double(INFINITY));
+    }
+    if (strncmp(input, "-inf", 4) == 0 && !isalnum((unsigned char)input[4]) && input[4] != '_') {
+        *end = input + 4;
+        return Ok(SExpPtr, ParseError, sexp_double(-INFINITY));
+    }
+
+    /* Number */
+    if (isdigit((unsigned char)*input) ||
+        ((*input == '-' || *input == '+') && (isdigit((unsigned char)input[1]) || input[1] == '.')) ||
+        (*input == '.' && isdigit((unsigned char)input[1]))) {
+        char *int_end;
+        char *dbl_end;
+        errno = 0;
+        long ival = strtol(input, &int_end, 10);
+        bool int_overflow = (errno == ERANGE);
+        errno = 0;
+        double dval = strtod(input, &dbl_end);
+        if (dbl_end == input) {
+            return Err(SExpPtr, ParseError, "invalid number");
+        }
+        if (errno == ERANGE && (dval == HUGE_VAL || dval == -HUGE_VAL)) {
+            return Err(SExpPtr, ParseError, "double overflow");
+        }
+        if (int_end == dbl_end && !int_overflow) {
+            *end = int_end;
+            return Ok(SExpPtr, ParseError, sexp_int(ival));
+        }
+        *end = dbl_end;
+        return Ok(SExpPtr, ParseError, sexp_double(dval));
+    }
+
+    /* Symbol */
+    if (isalpha((unsigned char)*input) || *input == '_') {
+        const char *p = input + 1;
+        while (isalnum((unsigned char)*p) || *p == '_') p++;
+        size_t n = (size_t)(p - input);
+        char *name = (char *)CYAN_MALLOC(n + 1);
+        if (!name) CYAN_PANIC("allocation failed");
+        memcpy(name, input, n);
+        name[n] = '\0';
+        SExp *e = _sexp_alloc(SEXP_SYMBOL);
+        e->str = name;
+        *end = p;
+        return Ok(SExpPtr, ParseError, e);
+    }
+
+    return Err(SExpPtr, ParseError, "unexpected character");
+}
+
+/**
+ * @brief Parse a complete S-expression value (atom or nested list)
+ * @param input The input text
+ * @param end If non-NULL, set to point after the parsed value
+ * @return Result containing a heap-allocated SExp tree (free with sexp_free)
+ *         or an error message
+ *
+ * Example:
+ *   Result_SExpPtr_ParseError r = parse_sexp("(1 2 (3 4) 5)", NULL);
+ *   if (is_ok(r)) {
+ *       SExp *e = unwrap_ok(r);
+ *       // e->list.len == 4
+ *       sexp_free(e);
+ *   }
+ */
+static inline Result_SExpPtr_ParseError parse_sexp(const char *input, const char **end) {
+    if (!input) {
+        return Err(SExpPtr, ParseError, "null input");
+    }
+    const char *local_end;
+    Result_SExpPtr_ParseError r = _parse_sexp_value(input, &local_end, 0);
+    if (r.is_ok_flag && end) {
+        *end = local_end;
+    }
+    return r;
+}
+
+/*----------------------------------------------------------------------------
+ * Serialization
+ *----------------------------------------------------------------------------*/
+
+/* Internal: append bytes to a growing buffer (reuses _cyan_pp_reserve) */
+static inline void _sexp_write(char **buf, size_t *cap, size_t *len,
+                               const char *src, size_t n) {
+    _cyan_pp_reserve(buf, cap, *len, n);
+    memcpy(*buf + *len, src, n);
+    *len += n;
+}
+
+/* Internal: recursively render a tree into the buffer */
+static inline void _sexp_render(const SExp *e, char **buf, size_t *cap, size_t *len) {
+    switch (e->type) {
+        case SEXP_INT: {
+            char tmp[32];
+            int n = snprintf(tmp, sizeof(tmp), "%ld", e->i);
+            _sexp_write(buf, cap, len, tmp, (size_t)n);
+            break;
+        }
+        case SEXP_DOUBLE: {
+            char *s = serialize_double(e->d);
+            _sexp_write(buf, cap, len, s, strlen(s));
+            CYAN_FREE(s);
+            break;
+        }
+        case SEXP_STRING: {
+            char *s = serialize_string(e->str);
+            _sexp_write(buf, cap, len, s, strlen(s));
+            CYAN_FREE(s);
+            break;
+        }
+        case SEXP_SYMBOL:
+            _sexp_write(buf, cap, len, e->str, strlen(e->str));
+            break;
+        case SEXP_LIST:
+            _sexp_write(buf, cap, len, "(", 1);
+            for (size_t i = 0; i < e->list.len; i++) {
+                if (i > 0) _sexp_write(buf, cap, len, " ", 1);
+                _sexp_render(e->list.items[i], buf, cap, len);
+            }
+            _sexp_write(buf, cap, len, ")", 1);
+            break;
+    }
+}
+
+/**
+ * @brief Serialize an S-expression tree to text
+ * @param e The tree to serialize (NULL yields an empty string)
+ * @return Newly allocated string (caller must free)
+ *
+ * Output parses back to a structurally equal tree:
+ *   sexp_eq(unwrap_ok(parse_sexp(serialize_sexp(e), NULL)), e)
+ */
+static inline char *serialize_sexp(const SExp *e) {
+    size_t cap = 64;
+    size_t len = 0;
+    char *buf = (char *)CYAN_MALLOC(cap);
+    if (!buf) CYAN_PANIC("allocation failed");
+    if (e) {
+        _sexp_render(e, &buf, &cap, &len);
+    }
+    buf[len] = '\0';
+    return buf;
 }
 
 #endif /* CYAN_SERIALIZE_H */

@@ -160,9 +160,9 @@ int main(void) {
     string_free(&clearable);
     
     /* --------------------------------------------------------
-     * 9. Using vtable convenience macros
+     * 9. Using convenience macros
      * -------------------------------------------------------- */
-    printf("9. Using vtable convenience macros\n");
+    printf("9. Using convenience macros\n");
     
     String str = string_from("Test");
     
@@ -204,7 +204,52 @@ int main(void) {
     
     string_free(&dest);
     string_free(&src);
-    
+
+    /* --------------------------------------------------------
+     * 12. Searching within strings
+     * -------------------------------------------------------- */
+    printf("12. Searching with string_find and string_contains\n");
+
+    String haystack = string_from("The quick brown fox");
+
+    Option_size_t pos = string_find(&haystack, "quick");
+    if (is_some(pos)) {
+        printf("   \"quick\" found at index: %zu\n", unwrap(pos));
+    }
+
+    pos = string_find(&haystack, "cat");
+    printf("   \"cat\" found: %s\n", is_some(pos) ? "yes" : "no");
+
+    printf("   Contains \"brown\": %s\n",
+           string_contains(&haystack, "brown") ? "yes" : "no");
+    printf("   Starts with \"The\": %s\n",
+           string_starts_with(&haystack, "The") ? "yes" : "no");
+    printf("   Ends with \"fox\": %s\n\n",
+           string_ends_with(&haystack, "fox") ? "yes" : "no");
+
+    string_free(&haystack);
+
+    /* --------------------------------------------------------
+     * 13. Splitting strings
+     * -------------------------------------------------------- */
+    printf("13. Splitting with string_split_next\n");
+
+    String csv = string_from("alpha,beta,gamma");
+    printf("   Splitting \"%s\" on ',':\n", string_cstr(&csv));
+
+    Slice_char rest = string_as_slice(&csv);
+    Slice_char part;
+    while (string_split_next(&rest, ',', &part)) {
+        printf("   - \"");
+        for (size_t i = 0; i < slice_char_len(part); i++) {
+            printf("%c", unwrap(slice_char_get(part, i)));
+        }
+        printf("\"\n");
+    }
+    printf("\n");
+
+    string_free(&csv);
+
     /* --------------------------------------------------------
      * Cleanup
      * -------------------------------------------------------- */

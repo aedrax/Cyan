@@ -28,26 +28,10 @@
 
 /*============================================================================
  * Version Information
- *============================================================================*/
-
-/** @brief Major version number */
-#define CYAN_VERSION_MAJOR 0
-
-/** @brief Minor version number */
-#define CYAN_VERSION_MINOR 1
-
-/** @brief Patch version number */
-#define CYAN_VERSION_PATCH 0
-
-/** @brief Full version as string */
-#define CYAN_VERSION_STRING "0.1.0"
-
-/** @brief Version as single integer for comparison: (major * 10000 + minor * 100 + patch) */
-#define CYAN_VERSION ((CYAN_VERSION_MAJOR * 10000) + (CYAN_VERSION_MINOR * 100) + CYAN_VERSION_PATCH)
-
-/** @brief Check if Cyan version is at least the specified version */
-#define CYAN_VERSION_AT_LEAST(major, minor, patch) \
-    (CYAN_VERSION >= ((major) * 10000 + (minor) * 100 + (patch)))
+ *============================================================================
+ * CYAN_VERSION_MAJOR/MINOR/PATCH, CYAN_VERSION_STRING, CYAN_VERSION, and
+ * CYAN_VERSION_AT_LEAST are defined in common.h (included below).
+ */
 
 /*============================================================================
  * Feature Detection Macros

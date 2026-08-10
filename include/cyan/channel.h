@@ -47,10 +47,6 @@ typedef enum {
  * Channel Type Definition Macro
  *============================================================================*/
 
-/* Forward declare vtable struct */
-#define CHANNEL_VT_FORWARD(T) \
-    typedef struct ChannelVT_##T ChannelVT_##T
-
 /**
  * @brief Generate a Channel type for a given element type
  * @param T The element type to be sent through the channel
@@ -69,7 +65,6 @@ typedef enum {
 #define CHANNEL_DEFINE(T) \
     /* Make sure Option type is defined for this type */ \
     OPTION_DEFINE(T); \
-    CHANNEL_VT_FORWARD(T); \
     \
     typedef struct { \
         T *buffer;           /* Circular buffer for elements */ \
@@ -82,83 +77,51 @@ typedef enum {
         void *mutex;         /* Mutex for thread safety */ \
         void *cond_send;     /* Condition variable for senders */ \
         void *cond_recv;     /* Condition variable for receivers */ \
-        const ChannelVT_##T *vt; /* Pointer to shared vtable */ \
     } Channel_##T; \
     \
     /* Internal: Lock the channel mutex if thread-safe */ \
-    static inline void _chan_##T##_lock(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_lock(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_LOCK(ch); \
     } \
     \
     /* Internal: Unlock the channel mutex if thread-safe */ \
-    static inline void _chan_##T##_unlock(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_unlock(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_UNLOCK(ch); \
     } \
     \
     /* Internal: Wait on send condition if thread-safe */ \
-    static inline void _chan_##T##_wait_send(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_wait_send(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_WAIT_SEND(ch); \
     } \
     \
     /* Internal: Wait on recv condition if thread-safe */ \
-    static inline void _chan_##T##_wait_recv(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_wait_recv(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_WAIT_RECV(ch); \
     } \
     \
     /* Internal: Signal send condition if thread-safe */ \
-    static inline void _chan_##T##_signal_send(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_signal_send(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_SIGNAL_SEND(ch); \
     } \
     \
     /* Internal: Signal recv condition if thread-safe */ \
-    static inline void _chan_##T##_signal_recv(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void _chan_##T##_signal_recv(Channel_##T *ch) { \
         (void)ch; \
         _CYAN_CHANNEL_SIGNAL_RECV(ch); \
     } \
-    \
-    /* Forward declarations for vtable */ \
-    static inline ChanStatus chan_##T##_send(Channel_##T *ch, T value); \
-    static inline Option_##T chan_##T##_recv(Channel_##T *ch); \
-    static inline ChanStatus chan_##T##_try_send(Channel_##T *ch, T value); \
-    static inline Option_##T chan_##T##_try_recv(Channel_##T *ch); \
-    static inline void chan_##T##_close(Channel_##T *ch); \
-    static inline bool chan_##T##_is_closed(Channel_##T *ch); \
-    static inline void chan_##T##_free(Channel_##T *ch); \
-    \
-    /* Vtable structure */ \
-    struct ChannelVT_##T { \
-        ChanStatus (*chan_send)(Channel_##T *ch, T value); \
-        Option_##T (*chan_recv)(Channel_##T *ch); \
-        ChanStatus (*chan_try_send)(Channel_##T *ch, T value); \
-        Option_##T (*chan_try_recv)(Channel_##T *ch); \
-        void (*chan_close)(Channel_##T *ch); \
-        bool (*chan_is_closed)(Channel_##T *ch); \
-        void (*chan_free)(Channel_##T *ch); \
-    }; \
-    \
-    /* Static const vtable instance */ \
-    static const ChannelVT_##T _chan_##T##_vt = { \
-        .chan_send = chan_##T##_send, \
-        .chan_recv = chan_##T##_recv, \
-        .chan_try_send = chan_##T##_try_send, \
-        .chan_try_recv = chan_##T##_try_recv, \
-        .chan_close = chan_##T##_close, \
-        .chan_is_closed = chan_##T##_is_closed, \
-        .chan_free = chan_##T##_free \
-    }; \
     \
     /** \
      * @brief Create a new channel \
      * @param capacity Buffer size (0 for unbuffered/synchronous) \
      * @return Pointer to new channel, or NULL on failure \
      */ \
-    static inline Channel_##T *chan_##T##_new(size_t capacity) { \
-        Channel_##T *ch = (Channel_##T *)malloc(sizeof(Channel_##T)); \
+    CYAN_UNUSED static inline Channel_##T *chan_##T##_new(size_t capacity) { \
+        Channel_##T *ch = (Channel_##T *)CYAN_MALLOC(sizeof(Channel_##T)); \
         if (!ch) { \
             CYAN_PANIC("chan_new: allocation failed"); \
             return NULL; \
@@ -172,18 +135,17 @@ typedef enum {
         ch->mutex = NULL; \
         ch->cond_send = NULL; \
         ch->cond_recv = NULL; \
-        ch->vt = &_chan_##T##_vt; \
         \
         if (capacity > SIZE_MAX / sizeof(T)) { \
-            free(ch); \
+            CYAN_FREE(ch); \
             CYAN_PANIC("chan_new: capacity overflow"); \
             return NULL; \
         } \
         /* Unbuffered channels still get a one-element slot, used for the \
          * sender/receiver rendezvous hand-off */ \
-        ch->buffer = (T *)malloc((capacity > 0 ? capacity : 1) * sizeof(T)); \
+        ch->buffer = (T *)CYAN_MALLOC((capacity > 0 ? capacity : 1) * sizeof(T)); \
         if (!ch->buffer) { \
-            free(ch); \
+            CYAN_FREE(ch); \
             CYAN_PANIC("chan_new: buffer allocation failed"); \
             return NULL; \
         } \
@@ -198,7 +160,7 @@ typedef enum {
      * @param ch The channel to check \
      * @return true if closed, false otherwise \
      */ \
-    static inline bool chan_##T##_is_closed(Channel_##T *ch) { \
+    CYAN_UNUSED static inline bool chan_##T##_is_closed(Channel_##T *ch) { \
         if (!ch) return true; \
         _chan_##T##_lock(ch); \
         bool result = ch->closed; \
@@ -213,7 +175,7 @@ typedef enum {
      * After closing, no more sends are allowed. Receivers will get \
      * remaining buffered values, then None. \
      */ \
-    static inline void chan_##T##_close(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void chan_##T##_close(Channel_##T *ch) { \
         if (!ch) return; \
         _chan_##T##_lock(ch); \
         ch->closed = true; \
@@ -229,7 +191,7 @@ typedef enum {
      * @param value The value to send \
      * @return CHAN_OK on success, CHAN_CLOSED if closed, CHAN_WOULD_BLOCK if full \
      */ \
-    static inline ChanStatus chan_##T##_try_send(Channel_##T *ch, T value) { \
+    CYAN_UNUSED static inline ChanStatus chan_##T##_try_send(Channel_##T *ch, T value) { \
         if (!ch) return CHAN_CLOSED; \
         \
         _chan_##T##_lock(ch); \
@@ -265,7 +227,7 @@ typedef enum {
      * @param ch The channel to receive from \
      * @return Option containing the value, or None if empty/closed \
      */ \
-    static inline Option_##T chan_##T##_try_recv(Channel_##T *ch) { \
+    CYAN_UNUSED static inline Option_##T chan_##T##_try_recv(Channel_##T *ch) { \
         if (!ch) return None(T); \
         \
         _chan_##T##_lock(ch); \
@@ -304,7 +266,7 @@ typedef enum {
      * buffer is full; for unbuffered channels it performs a full rendezvous, \
      * blocking until a receiver has taken the value. \
      */ \
-    static inline ChanStatus chan_##T##_send(Channel_##T *ch, T value) { \
+    CYAN_UNUSED static inline ChanStatus chan_##T##_send(Channel_##T *ch, T value) { \
         if (!ch) return CHAN_CLOSED; \
         \
         _chan_##T##_lock(ch); \
@@ -382,7 +344,7 @@ typedef enum {
      *         (or if empty in non-thread-safe mode, where blocking would \
      *         hang forever) \
      */ \
-    static inline Option_##T chan_##T##_recv(Channel_##T *ch) { \
+    CYAN_UNUSED static inline Option_##T chan_##T##_recv(Channel_##T *ch) { \
         if (!ch) return None(T); \
         \
         _chan_##T##_lock(ch); \
@@ -427,15 +389,15 @@ typedef enum {
      * @brief Free the channel and its resources \
      * @param ch The channel to free \
      */ \
-    static inline void chan_##T##_free(Channel_##T *ch) { \
+    CYAN_UNUSED static inline void chan_##T##_free(Channel_##T *ch) { \
         if (!ch) return; \
         \
         _CYAN_CHANNEL_DESTROY(ch); \
         \
         if (ch->buffer) { \
-            free(ch->buffer); \
+            CYAN_FREE(ch->buffer); \
         } \
-        free(ch); \
+        CYAN_FREE(ch); \
     }
 
 /*============================================================================
@@ -449,12 +411,12 @@ typedef enum {
 
 /* Thread-safe implementation using pthreads */
 #define _CYAN_CHANNEL_INIT(ch) do { \
-    (ch)->mutex = malloc(sizeof(pthread_mutex_t)); \
-    (ch)->cond_send = malloc(sizeof(pthread_cond_t)); \
-    (ch)->cond_recv = malloc(sizeof(pthread_cond_t)); \
+    (ch)->mutex = CYAN_MALLOC(sizeof(pthread_mutex_t)); \
+    (ch)->cond_send = CYAN_MALLOC(sizeof(pthread_cond_t)); \
+    (ch)->cond_recv = CYAN_MALLOC(sizeof(pthread_cond_t)); \
     if (!(ch)->mutex || !(ch)->cond_send || !(ch)->cond_recv) { \
-        free((ch)->mutex); free((ch)->cond_send); free((ch)->cond_recv); \
-        free((ch)->buffer); free(ch); \
+        CYAN_FREE((ch)->mutex); CYAN_FREE((ch)->cond_send); CYAN_FREE((ch)->cond_recv); \
+        CYAN_FREE((ch)->buffer); CYAN_FREE(ch); \
         CYAN_PANIC("chan_new: sync primitive allocation failed"); \
     } \
     pthread_mutex_init((pthread_mutex_t *)(ch)->mutex, NULL); \
@@ -465,15 +427,15 @@ typedef enum {
 #define _CYAN_CHANNEL_DESTROY(ch) do { \
     if ((ch)->mutex) { \
         pthread_mutex_destroy((pthread_mutex_t *)(ch)->mutex); \
-        free((ch)->mutex); \
+        CYAN_FREE((ch)->mutex); \
     } \
     if ((ch)->cond_send) { \
         pthread_cond_destroy((pthread_cond_t *)(ch)->cond_send); \
-        free((ch)->cond_send); \
+        CYAN_FREE((ch)->cond_send); \
     } \
     if ((ch)->cond_recv) { \
         pthread_cond_destroy((pthread_cond_t *)(ch)->cond_recv); \
-        free((ch)->cond_recv); \
+        CYAN_FREE((ch)->cond_recv); \
     } \
 } while(0)
 
@@ -513,77 +475,46 @@ typedef enum {
 #endif /* CYAN_CHANNEL_THREADSAFE */
 
 /*============================================================================
- * Vtable Convenience Macros
- *============================================================================*/
-
-/* These macros mirror the standalone functions' NULL handling: a NULL
- * channel yields CHAN_CLOSED / None / true instead of crashing. Each
- * argument is evaluated exactly once. Note: a None produced from a NULL
- * channel has no vtable pointer set (use the plain is_some/unwrap macros
- * on it, not the OPT_* vtable macros). */
-#if defined(__GNUC__) || defined(__clang__)
+ * Channel Convenience Macros (type-first, like Some(T, ...))
+ *============================================================================
+ * Channels are passed as pointers; the functions themselves handle NULL
+ * (CHAN_SEND on NULL yields CHAN_CLOSED, CHAN_RECV yields None, ...).
+ * Each argument is evaluated exactly once.
+ */
 
 /**
- * @brief Send a value to channel (via vtable); CHAN_CLOSED if ch is NULL
+ * @brief Send a value to channel (CHAN_CLOSED if ch is NULL)
  */
-#define CHAN_SEND(ch, val) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       _cyan_ch ? _cyan_ch->vt->chan_send(_cyan_ch, (val)) : CHAN_CLOSED; })
+#define CHAN_SEND(T, ch, val) chan_##T##_send((ch), (val))
 
 /**
- * @brief Receive a value from channel (via vtable); None if ch is NULL
+ * @brief Receive a value from channel (None if ch is NULL)
  */
-#define CHAN_RECV(ch) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       _cyan_ch ? _cyan_ch->vt->chan_recv(_cyan_ch) \
-                : (__typeof__(_cyan_ch->vt->chan_recv(_cyan_ch))){ .has_value = false }; })
+#define CHAN_RECV(T, ch) chan_##T##_recv(ch)
 
 /**
- * @brief Try to send a value without blocking (via vtable); CHAN_CLOSED if ch is NULL
+ * @brief Try to send a value without blocking (CHAN_CLOSED if ch is NULL)
  */
-#define CHAN_TRY_SEND(ch, val) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       _cyan_ch ? _cyan_ch->vt->chan_try_send(_cyan_ch, (val)) : CHAN_CLOSED; })
+#define CHAN_TRY_SEND(T, ch, val) chan_##T##_try_send((ch), (val))
 
 /**
- * @brief Try to receive a value without blocking (via vtable); None if ch is NULL
+ * @brief Try to receive a value without blocking (None if ch is NULL)
  */
-#define CHAN_TRY_RECV(ch) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       _cyan_ch ? _cyan_ch->vt->chan_try_recv(_cyan_ch) \
-                : (__typeof__(_cyan_ch->vt->chan_try_recv(_cyan_ch))){ .has_value = false }; })
+#define CHAN_TRY_RECV(T, ch) chan_##T##_try_recv(ch)
 
 /**
- * @brief Close the channel (via vtable); no-op if ch is NULL
+ * @brief Close the channel (no-op if ch is NULL)
  */
-#define CHAN_CLOSE(ch) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       if (_cyan_ch) _cyan_ch->vt->chan_close(_cyan_ch); })
+#define CHAN_CLOSE(T, ch) chan_##T##_close(ch)
 
 /**
- * @brief Check if channel is closed (via vtable); true if ch is NULL
+ * @brief Check if channel is closed (true if ch is NULL)
  */
-#define CHAN_IS_CLOSED(ch) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       _cyan_ch ? _cyan_ch->vt->chan_is_closed(_cyan_ch) : true; })
+#define CHAN_IS_CLOSED(T, ch) chan_##T##_is_closed(ch)
 
 /**
- * @brief Free the channel (via vtable); no-op if ch is NULL
+ * @brief Free the channel (no-op if ch is NULL)
  */
-#define CHAN_FREE(ch) \
-    ({ __typeof__(ch) _cyan_ch = (ch); \
-       if (_cyan_ch) _cyan_ch->vt->chan_free(_cyan_ch); })
-
-#else /* Fallbacks: evaluate ch more than once */
-
-#define CHAN_SEND(ch, val) ((ch) ? (ch)->vt->chan_send((ch), (val)) : CHAN_CLOSED)
-#define CHAN_RECV(ch) ((ch)->vt->chan_recv((ch)))
-#define CHAN_TRY_SEND(ch, val) ((ch) ? (ch)->vt->chan_try_send((ch), (val)) : CHAN_CLOSED)
-#define CHAN_TRY_RECV(ch) ((ch)->vt->chan_try_recv((ch)))
-#define CHAN_CLOSE(ch) do { if (ch) (ch)->vt->chan_close((ch)); } while (0)
-#define CHAN_IS_CLOSED(ch) ((ch) ? (ch)->vt->chan_is_closed((ch)) : true)
-#define CHAN_FREE(ch) do { if (ch) (ch)->vt->chan_free((ch)); } while (0)
-
-#endif
+#define CHAN_FREE(T, ch) chan_##T##_free(ch)
 
 #endif /* CYAN_CHANNEL_H */

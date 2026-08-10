@@ -8,6 +8,11 @@
  * - Property 48: String slice matches substring
  * - Property 49: String cstr is null-terminated
  * - Property 50: String concat combines content
+ * - Property 51: find/contains/starts_with/ends_with match naive search
+ * - Property 52: trim is idempotent and strips edge whitespace
+ * - Property 53: string_eq is reflexive and matches strcmp semantics
+ * - Property 54: string_split_next reconstructs the input
+ * - Property 55: String macro == function behavioral equivalence
  */
 
 #include <stdio.h>
@@ -70,12 +75,6 @@ static enum theft_trial_res prop_append_preserves_content(struct theft *t, void 
     /* Create a string and append the input */
     String s = string_new();
     
-    /* Verify vt pointer is set after creation */
-    if (s.vt == NULL) {
-        string_free(&s);
-        return THEFT_TRIAL_FAIL;
-    }
-    
     string_append(&s, input);
     
     /* Verify length matches */
@@ -135,12 +134,6 @@ static enum theft_trial_res prop_format_correct_output(struct theft *t, void *ar
     /* Format using string_format */
     String s = string_new();
     
-    /* Verify vt pointer is set after creation */
-    if (s.vt == NULL) {
-        string_free(&s);
-        return THEFT_TRIAL_FAIL;
-    }
-    
     string_format(&s, "Value: %d", val);
     
     /* Format using sprintf for comparison */
@@ -181,12 +174,6 @@ static enum theft_trial_res prop_slice_matches_substring(struct theft *t, void *
     const char *input = (const char *)arg1;
     
     String s = string_from(input);
-    
-    /* Verify vt pointer is set after creation */
-    if (s.vt == NULL) {
-        string_free(&s);
-        return THEFT_TRIAL_FAIL;
-    }
     
     size_t len = string_len(&s);
     
@@ -231,12 +218,6 @@ static enum theft_trial_res prop_cstr_null_terminated(struct theft *t, void *arg
     const char *input = (const char *)arg1;
     
     String s = string_from(input);
-    
-    /* Verify vt pointer is set after creation */
-    if (s.vt == NULL) {
-        string_free(&s);
-        return THEFT_TRIAL_FAIL;
-    }
     
     const char *cstr = string_cstr(&s);
     
@@ -302,14 +283,6 @@ static enum theft_trial_res prop_concat_combines_content(struct theft *t, void *
     String a = string_from(input_a);
     String b = string_from(input_b);
     
-    /* Verify vt pointer is set after creation */
-    if (a.vt == NULL || b.vt == NULL) {
-        string_free(&a);
-        string_free(&b);
-        free(input_b);
-        return THEFT_TRIAL_FAIL;
-    }
-    
     String result = string_concat(&a, &b);
     
     /* Verify length is sum of both */
@@ -349,182 +322,414 @@ static enum theft_trial_res prop_concat_combines_content(struct theft *t, void *
 }
 
 /*============================================================================
- * Property 1 (vtable): Shared vtable instances (String)
- * For any two instances of String, their vtable pointers shall be equal
- * (point to the same address).
+ * Property 51: find/contains/starts_with/ends_with match naive search
+ * For any string and any substring of it (or a needle guaranteed absent),
+ * string_find/string_contains/string_starts_with/string_ends_with agree
+ * with naive reference implementations.
  *============================================================================*/
 
-static enum theft_trial_res prop_shared_string_vtable(struct theft *t, void *arg1) {
-    (void)t;
-    int64_t *val_ptr = (int64_t *)arg1;
-    int val = (int)(*val_ptr);
-    
-    /* Create multiple String instances using different constructors */
-    String s1 = string_new();
-    String s2 = string_new();
-    String s3 = string_from("Hello");
-    String s4 = string_from("World");
-    String s5 = string_with_capacity(10);
-    String s6 = string_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
-    
-    /* All vtable pointers should be non-null */
-    if (s1.vt == NULL || s2.vt == NULL || s3.vt == NULL || 
-        s4.vt == NULL || s5.vt == NULL || s6.vt == NULL) {
-        string_free(&s1);
-        string_free(&s2);
-        string_free(&s3);
-        string_free(&s4);
-        string_free(&s5);
-        string_free(&s6);
+/* Naive reference: first index of needle in haystack, or -1 */
+static long _naive_find(const char *haystack, const char *needle) {
+    size_t h_len = strlen(haystack);
+    size_t n_len = strlen(needle);
+    if (n_len == 0) return 0;
+    if (n_len > h_len) return -1;
+    for (size_t i = 0; i + n_len <= h_len; i++) {
+        if (memcmp(haystack + i, needle, n_len) == 0) {
+            return (long)i;
+        }
+    }
+    return -1;
+}
+
+static enum theft_trial_res prop_search_matches_naive(struct theft *t, void *arg1) {
+    const char *input = (const char *)arg1;
+    size_t len = strlen(input);
+
+    String s = string_from(input);
+
+    /* Pick a random substring of the input as the needle */
+    char needle[64];
+    size_t start = len > 0 ? theft_random_choice(t, len) : 0;
+    size_t max_n = len - start;
+    if (max_n > 63) max_n = 63;
+    size_t n_len = max_n > 0 ? theft_random_choice(t, max_n + 1) : 0;
+    memcpy(needle, input + start, n_len);
+    needle[n_len] = '\0';
+
+    /* find agrees with the naive reference */
+    long expected = _naive_find(input, needle);
+    Option_size_t found = string_find(&s, needle);
+    if (expected < 0) {
+        if (is_some(found)) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    } else {
+        if (!is_some(found) || unwrap(found) != (size_t)expected) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* contains agrees with find */
+    if (string_contains(&s, needle) != (expected >= 0)) {
+        string_free(&s);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* All vtable pointers should point to the same address */
-    if (s1.vt != s2.vt || s2.vt != s3.vt || s3.vt != s4.vt || 
-        s4.vt != s5.vt || s5.vt != s6.vt) {
-        string_free(&s1);
-        string_free(&s2);
-        string_free(&s3);
-        string_free(&s4);
-        string_free(&s5);
-        string_free(&s6);
+
+    /* A needle containing a character absent from the input is never found */
+    char absent[4] = { '\x01', 'z', 'q', '\0' };
+    if (_naive_find(input, absent) < 0 && string_contains(&s, absent)) {
+        string_free(&s);
         return THEFT_TRIAL_FAIL;
     }
-    
-    string_free(&s1);
-    string_free(&s2);
-    string_free(&s3);
-    string_free(&s4);
-    string_free(&s5);
-    string_free(&s6);
+
+    /* starts_with agrees with strncmp on every prefix length */
+    for (size_t p = 0; p <= len && p <= 8; p++) {
+        char prefix[16];
+        memcpy(prefix, input, p);
+        prefix[p] = '\0';
+        if (!string_starts_with(&s, prefix)) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* ends_with agrees with the tail of the input */
+    for (size_t p = 0; p <= len && p <= 8; p++) {
+        const char *suffix = input + (len - p);
+        if (!string_ends_with(&s, suffix)) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* A strictly longer needle can be neither prefix nor suffix */
+    char longer[128];
+    snprintf(longer, sizeof(longer), "%.100sX", input);
+    if (string_starts_with(&s, longer) || string_ends_with(&s, longer)) {
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    string_free(&s);
     return THEFT_TRIAL_PASS;
 }
 
 /*============================================================================
- * Property 5 (vtable): String vtable behavioral equivalence
- * For any String instance, any valid character, any valid C string, and any
- * valid index, calling operations through the vtable shall produce identical
- * results to calling the standalone functions.
+ * Property 52: trim is idempotent and strips edge whitespace
+ * After string_trim, the string has no leading or trailing whitespace and
+ * trimming again is a no-op.
  *============================================================================*/
 
-static enum theft_trial_res prop_string_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+static enum theft_trial_res prop_trim(struct theft *t, void *arg1) {
+    const char *input = (const char *)arg1;
+
+    /* Surround the input with random whitespace */
+    char padded[128];
+    size_t lead = theft_random_choice(t, 4);
+    size_t trail = theft_random_choice(t, 4);
+    size_t pos = 0;
+    for (size_t i = 0; i < lead; i++) padded[pos++] = (i % 2) ? ' ' : '\t';
+    size_t in_len = strlen(input);
+    if (in_len > 100) in_len = 100;
+    memcpy(padded + pos, input, in_len);
+    pos += in_len;
+    for (size_t i = 0; i < trail; i++) padded[pos++] = (i % 2) ? ' ' : '\n';
+    padded[pos] = '\0';
+
+    String s = string_from(padded);
+    string_trim(&s);
+
+    /* No leading or trailing whitespace remains */
+    size_t len = string_len(&s);
+    if (len > 0) {
+        const char *cstr = string_cstr(&s);
+        if (isspace((unsigned char)cstr[0]) || isspace((unsigned char)cstr[len - 1])) {
+            string_free(&s);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* Trimming is idempotent */
+    String before = string_from(string_cstr(&s));
+    string_trim(&s);
+    if (!string_eq(&s, &before)) {
+        string_free(&before);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    string_free(&before);
+    string_free(&s);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 53: string_eq is reflexive and matches strcmp semantics
+ * A string equals itself and a copy of itself; equality agrees with strcmp
+ * on the underlying C strings; appending a character breaks equality.
+ *============================================================================*/
+
+static enum theft_trial_res prop_string_eq(struct theft *t, void *arg1) {
     (void)t;
     const char *input = (const char *)arg1;
-    
-    /* Create two identical strings - one for vtable ops, one for standalone ops */
-    String s_vtable = string_from("Initial");
-    String s_standalone = string_from("Initial");
-    
-    /* Test push equivalence: vtable vs standalone */
+
+    String a = string_from(input);
+    String b = string_from(input);
+
+    /* Reflexive */
+    if (!string_eq(&a, &a)) {
+        string_free(&a);
+        string_free(&b);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Content-equal copies compare equal, matching strcmp */
+    bool cmp_equal = strcmp(string_cstr(&a), string_cstr(&b)) == 0;
+    if (string_eq(&a, &b) != cmp_equal) {
+        string_free(&a);
+        string_free(&b);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Appending a character breaks equality */
+    string_push(&b, '!');
+    if (string_eq(&a, &b)) {
+        string_free(&a);
+        string_free(&b);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (string_eq(&a, &b) != (strcmp(string_cstr(&a), string_cstr(&b)) == 0)) {
+        string_free(&a);
+        string_free(&b);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* NULL is tolerated and treated as empty */
+    String empty = string_new();
+    if (!string_eq(NULL, NULL) || !string_eq(&empty, NULL)) {
+        string_free(&a);
+        string_free(&b);
+        string_free(&empty);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    string_free(&a);
+    string_free(&b);
+    string_free(&empty);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 54: string_split_next reconstructs the input
+ * Joining the pieces produced by string_split_next with the delimiter
+ * yields the original string; "a,b," yields the 3 pieces "a", "b", "".
+ *============================================================================*/
+
+static enum theft_trial_res prop_split_reconstructs(struct theft *t, void *arg1) {
+    (void)t;
+    const char *input = (const char *)arg1;
+    char delim = ',';
+
+    String s = string_from(input);
+
+    /* Collect pieces and rebuild the input */
+    String rebuilt = string_new();
+    Slice_char rest = string_as_slice(&s);
+    Slice_char part;
+    bool first = true;
+    size_t piece_count = 0;
+
+    while (string_split_next(&rest, delim, &part)) {
+        if (!first) {
+            string_push(&rebuilt, delim);
+        }
+        for (size_t i = 0; i < part.len; i++) {
+            /* Pieces must never contain the delimiter */
+            if (part.data[i] == delim) {
+                string_free(&rebuilt);
+                string_free(&s);
+                return THEFT_TRIAL_FAIL;
+            }
+            string_push(&rebuilt, part.data[i]);
+        }
+        first = false;
+        piece_count++;
+    }
+
+    /* Joining the pieces with the delimiter reconstructs the input */
+    if (!string_eq(&rebuilt, &s)) {
+        string_free(&rebuilt);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Any input (even empty) yields delimiter-count + 1 pieces, because
+     * string_from always provides a non-NULL buffer */
+    size_t delim_count = 0;
+    for (const char *p = input; *p; p++) {
+        if (*p == delim) delim_count++;
+    }
+    size_t expected_pieces = delim_count + 1;
+    if (piece_count != expected_pieces) {
+        string_free(&rebuilt);
+        string_free(&s);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    string_free(&rebuilt);
+    string_free(&s);
+
+    /* Deterministic check: "a,b," yields "a", "b", "" */
+    String abc = string_from("a,b,");
+    Slice_char abc_rest = string_as_slice(&abc);
+    Slice_char abc_part;
+    const char *expected[3] = { "a", "b", "" };
+    size_t idx = 0;
+    while (string_split_next(&abc_rest, ',', &abc_part)) {
+        if (idx >= 3) {
+            string_free(&abc);
+            return THEFT_TRIAL_FAIL;
+        }
+        if (abc_part.len != strlen(expected[idx]) ||
+            (abc_part.len > 0 && memcmp(abc_part.data, expected[idx], abc_part.len) != 0)) {
+            string_free(&abc);
+            return THEFT_TRIAL_FAIL;
+        }
+        idx++;
+    }
+    if (idx != 3) {
+        string_free(&abc);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    string_free(&abc);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 55: String macro == function behavioral equivalence
+ * For any String instance, the STR_* macros (String is monomorphic, so no
+ * type argument) produce identical results to calling the standalone
+ * string_* functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_string_macro_fn_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    const char *input = (const char *)arg1;
+
+    /* Create two identical strings - one for macro ops, one for standalone ops */
+    String s_macro = string_from("Initial");
+    String s_fn = string_from("Initial");
+
+    /* Test push equivalence: macro vs standalone */
     char c = 'X';
-    s_vtable.vt->push(&s_vtable, c);
-    string_push(&s_standalone, c);
-    
+    STR_PUSH(s_macro, c);
+    string_push(&s_fn, c);
+
     /* Test len equivalence */
-    size_t len_vtable = s_vtable.vt->len(&s_vtable);
-    size_t len_standalone = string_len(&s_standalone);
-    
-    if (len_vtable != len_standalone) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+    if (STR_LEN(s_macro) != string_len(&s_fn)) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test cstr equivalence */
-    const char *cstr_vtable = s_vtable.vt->cstr(&s_vtable);
-    const char *cstr_standalone = string_cstr(&s_standalone);
-    
-    if (strcmp(cstr_vtable, cstr_standalone) != 0) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+    if (strcmp(STR_CSTR(s_macro), string_cstr(&s_fn)) != 0) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* Test append equivalence */
-    s_vtable.vt->append(&s_vtable, input);
-    string_append(&s_standalone, input);
-    
-    if (s_vtable.vt->len(&s_vtable) != string_len(&s_standalone)) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+    STR_APPEND(s_macro, input);
+    string_append(&s_fn, input);
+
+    if (STR_LEN(s_macro) != string_len(&s_fn)) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    if (strcmp(s_vtable.vt->cstr(&s_vtable), string_cstr(&s_standalone)) != 0) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+
+    if (strcmp(STR_CSTR(s_macro), string_cstr(&s_fn)) != 0) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* Test get equivalence for all indices */
-    for (size_t i = 0; i < s_vtable.vt->len(&s_vtable); i++) {
-        Option_char opt_vtable = s_vtable.vt->get(&s_vtable, i);
-        Option_char opt_standalone = string_get(&s_standalone, i);
-        
-        if (is_some(opt_vtable) != is_some(opt_standalone)) {
-            string_free(&s_vtable);
-            string_free(&s_standalone);
+
+    /* Test get equivalence for all indices (plus out-of-bounds) */
+    for (size_t i = 0; i <= STR_LEN(s_macro); i++) {
+        Option_char opt_macro = STR_GET(s_macro, i);
+        Option_char opt_fn = string_get(&s_fn, i);
+
+        if (is_some(opt_macro) != is_some(opt_fn)) {
+            string_free(&s_macro);
+            string_free(&s_fn);
             return THEFT_TRIAL_FAIL;
         }
-        
-        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
-            string_free(&s_vtable);
-            string_free(&s_standalone);
+
+        if (is_some(opt_macro) && unwrap(opt_macro) != unwrap(opt_fn)) {
+            string_free(&s_macro);
+            string_free(&s_fn);
             return THEFT_TRIAL_FAIL;
         }
     }
-    
-    /* Test get out-of-bounds equivalence */
-    Option_char oob_vtable = s_vtable.vt->get(&s_vtable, len_vtable + 100);
-    Option_char oob_standalone = string_get(&s_standalone, len_standalone + 100);
-    
-    if (is_none(oob_vtable) != is_none(oob_standalone)) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+
+    /* Test find/contains equivalence */
+    Option_size_t find_macro = STR_FIND(s_macro, "Init");
+    Option_size_t find_fn = string_find(&s_fn, "Init");
+
+    if (is_some(find_macro) != is_some(find_fn)) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+    if (is_some(find_macro) && unwrap(find_macro) != unwrap(find_fn)) {
+        string_free(&s_macro);
+        string_free(&s_fn);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    if (STR_CONTAINS(s_macro, "tial") != string_contains(&s_fn, "tial")) {
+        string_free(&s_macro);
+        string_free(&s_fn);
+        return THEFT_TRIAL_FAIL;
+    }
+
     /* Test slice equivalence */
-    size_t slice_start = 0;
-    size_t slice_end = s_vtable.vt->len(&s_vtable) / 2;
-    
-    Slice_char slice_vtable = s_vtable.vt->slice(&s_vtable, slice_start, slice_end);
-    Slice_char slice_standalone = string_slice(&s_standalone, slice_start, slice_end);
-    
-    if (slice_vtable.len != slice_standalone.len) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+    Slice_char slice_macro = STR_SLICE(s_macro, 0, STR_LEN(s_macro) / 2);
+    Slice_char slice_fn = string_slice(&s_fn, 0, string_len(&s_fn) / 2);
+
+    if (slice_macro.len != slice_fn.len) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    for (size_t i = 0; i < slice_vtable.len; i++) {
-        if (slice_vtable.data[i] != slice_standalone.data[i]) {
-            string_free(&s_vtable);
-            string_free(&s_standalone);
+
+    for (size_t i = 0; i < slice_macro.len; i++) {
+        if (slice_macro.data[i] != slice_fn.data[i]) {
+            string_free(&s_macro);
+            string_free(&s_fn);
             return THEFT_TRIAL_FAIL;
         }
     }
-    
+
     /* Test clear equivalence */
-    s_vtable.vt->clear(&s_vtable);
-    string_clear(&s_standalone);
-    
-    if (s_vtable.vt->len(&s_vtable) != string_len(&s_standalone)) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
+    STR_CLEAR(s_macro);
+    string_clear(&s_fn);
+
+    if (STR_LEN(s_macro) != string_len(&s_fn) || STR_LEN(s_macro) != 0) {
+        string_free(&s_macro);
+        string_free(&s_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    if (s_vtable.vt->len(&s_vtable) != 0) {
-        string_free(&s_vtable);
-        string_free(&s_standalone);
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    /* Cleanup using vtable free for one, standalone for other */
-    s_vtable.vt->free(&s_vtable);
-    string_free(&s_standalone);
-    
+
+    /* Cleanup using STR_FREE for macro, standalone for other */
+    STR_FREE(s_macro);
+    string_free(&s_fn);
+
     return THEFT_TRIAL_PASS;
 }
 
@@ -583,18 +788,42 @@ static StringTest string_tests[] = {
         0,
         false
     },
-    /* Property 1 (vtable): Shared vtable instances (String) */
+    /* Property 51: Search matches naive reference */
     {
-        "Property 1 (vtable): Shared vtable instances (String)",
-        prop_shared_string_vtable,
-        NULL,
-        THEFT_BUILTIN_int64_t,
-        true
+        "Property 51: find/contains/starts_with/ends_with match naive search",
+        prop_search_matches_naive,
+        &string_gen_type_info,
+        0,
+        false
     },
-    /* Property 5 (vtable): String vtable behavioral equivalence */
+    /* Property 52: Trim is idempotent */
     {
-        "Property 5 (vtable): String vtable behavioral equivalence",
-        prop_string_vtable_behavioral_equivalence,
+        "Property 52: trim is idempotent and strips edge whitespace",
+        prop_trim,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 53: string_eq semantics */
+    {
+        "Property 53: string_eq is reflexive and matches strcmp semantics",
+        prop_string_eq,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 54: split_next reconstruction */
+    {
+        "Property 54: string_split_next reconstructs the input",
+        prop_split_reconstructs,
+        &string_gen_type_info,
+        0,
+        false
+    },
+    /* Property 55: Macro == function equivalence */
+    {
+        "Property 55: String macro == function behavioral equivalence",
+        prop_string_macro_fn_equivalence,
         &string_gen_type_info,
         0,
         false
@@ -603,8 +832,10 @@ static StringTest string_tests[] = {
 
 #define NUM_STRING_TESTS (sizeof(string_tests) / sizeof(string_tests[0]))
 
-int run_string_tests(theft_seed seed) {
+int run_string_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_STRING_TESTS;
     
     printf("\nString Tests:\n");
     

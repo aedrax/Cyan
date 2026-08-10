@@ -15,9 +15,9 @@
  * 
  * Named flags:
  *   FLAGS_DEFINE(Permissions, READ, WRITE, EXECUTE);
- *   BITSET_DEFINE(Permissions_COUNT);
+ *   BITSET_DEFINE(3);  // Permissions_COUNT == 3
  *   Bitset_3 perms = bitset_3_new();
- *   FLAGS_SET(perms, Permissions_READ);
+ *   FLAGS_SET(3, perms, Permissions_READ);
  */
 
 #ifndef CYAN_BITSET_H
@@ -52,152 +52,82 @@
 #define BITSET_DEFINE(N) \
     _Static_assert((N) >= 1 && (N) <= 64, "BITSET_DEFINE: N must be 1-64"); \
     \
-    /* Forward declare vtable */ \
-    typedef struct BitsetVT_##N BitsetVT_##N; \
-    \
     /* Type definition */ \
     typedef struct { \
         _CYAN_BACKING_UINT(N) bits; \
-        const BitsetVT_##N *vt; \
     } Bitset_##N; \
     \
-    /* Function prototypes for vtable */ \
-    static inline void _bitset_##N##_set(Bitset_##N *bs, u8 index); \
-    static inline void _bitset_##N##_clear(Bitset_##N *bs, u8 index); \
-    static inline bool _bitset_##N##_get(const Bitset_##N *bs, u8 index); \
-    static inline void _bitset_##N##_toggle(Bitset_##N *bs, u8 index); \
-    static inline Bitset_##N _bitset_##N##_union(const Bitset_##N *a, const Bitset_##N *b); \
-    static inline Bitset_##N _bitset_##N##_intersect(const Bitset_##N *a, const Bitset_##N *b); \
-    static inline Bitset_##N _bitset_##N##_diff(const Bitset_##N *a, const Bitset_##N *b); \
-    static inline Bitset_##N _bitset_##N##_complement(const Bitset_##N *bs); \
-    static inline bool _bitset_##N##_eq(const Bitset_##N *a, const Bitset_##N *b); \
-    static inline u8 _bitset_##N##_count(const Bitset_##N *bs); \
-    static inline bool _bitset_##N##_all(const Bitset_##N *bs); \
-    static inline bool _bitset_##N##_any(const Bitset_##N *bs); \
-    static inline bool _bitset_##N##_none(const Bitset_##N *bs); \
-    \
-    /* Vtable structure */ \
-    struct BitsetVT_##N { \
-        void (*bs_set)(Bitset_##N *bs, u8 index); \
-        void (*bs_clear)(Bitset_##N *bs, u8 index); \
-        bool (*bs_get)(const Bitset_##N *bs, u8 index); \
-        void (*bs_toggle)(Bitset_##N *bs, u8 index); \
-        Bitset_##N (*bs_union)(const Bitset_##N *a, const Bitset_##N *b); \
-        Bitset_##N (*bs_intersect)(const Bitset_##N *a, const Bitset_##N *b); \
-        Bitset_##N (*bs_diff)(const Bitset_##N *a, const Bitset_##N *b); \
-        Bitset_##N (*bs_complement)(const Bitset_##N *bs); \
-        bool (*bs_eq)(const Bitset_##N *a, const Bitset_##N *b); \
-        u8 (*bs_count)(const Bitset_##N *bs); \
-        bool (*bs_all)(const Bitset_##N *bs); \
-        bool (*bs_any)(const Bitset_##N *bs); \
-        bool (*bs_none)(const Bitset_##N *bs); \
-    }; \
-    \
-    /* Static vtable instance - forward declaration */ \
-    static const BitsetVT_##N _bitset_##N##_vt; \
-    \
     /* Constructor - all bits cleared */ \
-    static inline Bitset_##N bitset_##N##_new(void) { \
-        return (Bitset_##N){ \
-            .bits = 0, \
-            .vt = &_bitset_##N##_vt \
-        }; \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_new(void) { \
+        return (Bitset_##N){ .bits = 0 }; \
     } \
     \
     /* Constructor from raw value - masks to N bits */ \
-    static inline Bitset_##N bitset_##N##_from_raw(_CYAN_BACKING_UINT(N) value) { \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_from_raw(_CYAN_BACKING_UINT(N) value) { \
         return (Bitset_##N){ \
-            .bits = (_CYAN_BACKING_UINT(N))(value & _CYAN_MASK(N)), \
-            .vt = &_bitset_##N##_vt \
+            .bits = (_CYAN_BACKING_UINT(N))(value & _CYAN_MASK(N)) \
         }; \
     } \
     \
     /* Bit manipulation - set bit at index */ \
-    static inline void _bitset_##N##_set(Bitset_##N *bs, u8 index) { \
+    CYAN_UNUSED static inline void bitset_##N##_set(Bitset_##N *bs, u8 index) { \
         if (index >= (N)) { \
             CYAN_PANIC("bit index out of bounds"); \
         } \
         bs->bits |= ((_CYAN_BACKING_UINT(N))1 << index); \
     } \
-    static inline void bitset_##N##_set(Bitset_##N *bs, u8 index) { \
-        _bitset_##N##_set(bs, index); \
-    } \
     \
     /* Bit manipulation - clear bit at index */ \
-    static inline void _bitset_##N##_clear(Bitset_##N *bs, u8 index) { \
+    CYAN_UNUSED static inline void bitset_##N##_clear(Bitset_##N *bs, u8 index) { \
         if (index >= (N)) { \
             CYAN_PANIC("bit index out of bounds"); \
         } \
         bs->bits &= ~((_CYAN_BACKING_UINT(N))1 << index); \
     } \
-    static inline void bitset_##N##_clear(Bitset_##N *bs, u8 index) { \
-        _bitset_##N##_clear(bs, index); \
-    } \
     \
     /* Bit manipulation - get bit at index */ \
-    static inline bool _bitset_##N##_get(const Bitset_##N *bs, u8 index) { \
+    CYAN_UNUSED static inline bool bitset_##N##_get(const Bitset_##N *bs, u8 index) { \
         if (index >= (N)) { \
             CYAN_PANIC("bit index out of bounds"); \
         } \
         return (bs->bits >> index) & 1; \
     } \
-    static inline bool bitset_##N##_get(const Bitset_##N *bs, u8 index) { \
-        return _bitset_##N##_get(bs, index); \
-    } \
     \
     /* Bit manipulation - toggle bit at index */ \
-    static inline void _bitset_##N##_toggle(Bitset_##N *bs, u8 index) { \
+    CYAN_UNUSED static inline void bitset_##N##_toggle(Bitset_##N *bs, u8 index) { \
         if (index >= (N)) { \
             CYAN_PANIC("bit index out of bounds"); \
         } \
         bs->bits ^= ((_CYAN_BACKING_UINT(N))1 << index); \
     } \
-    static inline void bitset_##N##_toggle(Bitset_##N *bs, u8 index) { \
-        _bitset_##N##_toggle(bs, index); \
-    } \
     \
     /* Set operations - union (OR) */ \
-    static inline Bitset_##N _bitset_##N##_union(const Bitset_##N *a, const Bitset_##N *b) { \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_union(const Bitset_##N *a, const Bitset_##N *b) { \
         return bitset_##N##_from_raw(a->bits | b->bits); \
-    } \
-    static inline Bitset_##N bitset_##N##_union(const Bitset_##N *a, const Bitset_##N *b) { \
-        return _bitset_##N##_union(a, b); \
     } \
     \
     /* Set operations - intersect (AND) */ \
-    static inline Bitset_##N _bitset_##N##_intersect(const Bitset_##N *a, const Bitset_##N *b) { \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_intersect(const Bitset_##N *a, const Bitset_##N *b) { \
         return bitset_##N##_from_raw(a->bits & b->bits); \
-    } \
-    static inline Bitset_##N bitset_##N##_intersect(const Bitset_##N *a, const Bitset_##N *b) { \
-        return _bitset_##N##_intersect(a, b); \
     } \
     \
     /* Set operations - difference (a AND NOT b) */ \
-    static inline Bitset_##N _bitset_##N##_diff(const Bitset_##N *a, const Bitset_##N *b) { \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_diff(const Bitset_##N *a, const Bitset_##N *b) { \
         return bitset_##N##_from_raw(a->bits & ~b->bits); \
-    } \
-    static inline Bitset_##N bitset_##N##_diff(const Bitset_##N *a, const Bitset_##N *b) { \
-        return _bitset_##N##_diff(a, b); \
     } \
     \
     /* Set operations - complement (NOT, masked to N bits) */ \
-    static inline Bitset_##N _bitset_##N##_complement(const Bitset_##N *bs) { \
-        return bitset_##N##_from_raw(~bs->bits & _CYAN_MASK(N)); \
-    } \
-    static inline Bitset_##N bitset_##N##_complement(const Bitset_##N *bs) { \
-        return _bitset_##N##_complement(bs); \
+    CYAN_UNUSED static inline Bitset_##N bitset_##N##_complement(const Bitset_##N *bs) { \
+        return bitset_##N##_from_raw((_CYAN_BACKING_UINT(N))(~bs->bits & _CYAN_MASK(N))); \
     } \
     \
     /* Equality check */ \
-    static inline bool _bitset_##N##_eq(const Bitset_##N *a, const Bitset_##N *b) { \
+    CYAN_UNUSED static inline bool bitset_##N##_eq(const Bitset_##N *a, const Bitset_##N *b) { \
         return (a->bits & _CYAN_MASK(N)) == (b->bits & _CYAN_MASK(N)); \
-    } \
-    static inline bool bitset_##N##_eq(const Bitset_##N *a, const Bitset_##N *b) { \
-        return _bitset_##N##_eq(a, b); \
     } \
     \
     /* Utility - count set bits (popcount) */ \
-    static inline u8 _bitset_##N##_count(const Bitset_##N *bs) { \
+    CYAN_UNUSED static inline u8 bitset_##N##_count(const Bitset_##N *bs) { \
         _CYAN_BACKING_UINT(N) v = bs->bits & _CYAN_MASK(N); \
         u8 count = 0; \
         while (v) { \
@@ -206,188 +136,139 @@
         } \
         return count; \
     } \
-    static inline u8 bitset_##N##_count(const Bitset_##N *bs) { \
-        return _bitset_##N##_count(bs); \
-    } \
     \
     /* Utility - check if all bits are set */ \
-    static inline bool _bitset_##N##_all(const Bitset_##N *bs) { \
+    CYAN_UNUSED static inline bool bitset_##N##_all(const Bitset_##N *bs) { \
         return (bs->bits & _CYAN_MASK(N)) == _CYAN_MASK(N); \
-    } \
-    static inline bool bitset_##N##_all(const Bitset_##N *bs) { \
-        return _bitset_##N##_all(bs); \
     } \
     \
     /* Utility - check if any bit is set */ \
-    static inline bool _bitset_##N##_any(const Bitset_##N *bs) { \
+    CYAN_UNUSED static inline bool bitset_##N##_any(const Bitset_##N *bs) { \
         return (bs->bits & _CYAN_MASK(N)) != 0; \
-    } \
-    static inline bool bitset_##N##_any(const Bitset_##N *bs) { \
-        return _bitset_##N##_any(bs); \
     } \
     \
     /* Utility - check if no bits are set */ \
-    static inline bool _bitset_##N##_none(const Bitset_##N *bs) { \
+    CYAN_UNUSED static inline bool bitset_##N##_none(const Bitset_##N *bs) { \
         return (bs->bits & _CYAN_MASK(N)) == 0; \
     } \
-    static inline bool bitset_##N##_none(const Bitset_##N *bs) { \
-        return _bitset_##N##_none(bs); \
-    } \
-    \
-    /* Static vtable instance */ \
-    static const BitsetVT_##N _bitset_##N##_vt __attribute__((unused)) = { \
-        .bs_set = _bitset_##N##_set, \
-        .bs_clear = _bitset_##N##_clear, \
-        .bs_get = _bitset_##N##_get, \
-        .bs_toggle = _bitset_##N##_toggle, \
-        .bs_union = _bitset_##N##_union, \
-        .bs_intersect = _bitset_##N##_intersect, \
-        .bs_diff = _bitset_##N##_diff, \
-        .bs_complement = _bitset_##N##_complement, \
-        .bs_eq = _bitset_##N##_eq, \
-        .bs_count = _bitset_##N##_count, \
-        .bs_all = _bitset_##N##_all, \
-        .bs_any = _bitset_##N##_any, \
-        .bs_none = _bitset_##N##_none \
-    }
+    /* Dummy typedef to absorb trailing semicolon */ \
+    typedef Bitset_##N Bitset_##N##_defined
 
 
 /*============================================================================
- * Vtable Convenience Macros
- *============================================================================*/
-
-#if defined(__GNUC__) || defined(__clang__)
+ * Bitset Convenience Macros (width-first, like BITSET_DEFINE(N))
+ *============================================================================
+ * Each argument is evaluated exactly once.
+ */
 
 /**
- * @brief Set bit at index via vtable
+ * @brief Set bit at index
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_SET(bs, i) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_set(_cyan_bsp, (i)); })
+#define BS_SET(N, bs, i)       bitset_##N##_set(&(bs), (i))
 
 /**
- * @brief Clear bit at index via vtable
+ * @brief Clear bit at index
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_CLEAR(bs, i) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_clear(_cyan_bsp, (i)); })
+#define BS_CLEAR(N, bs, i)     bitset_##N##_clear(&(bs), (i))
 
 /**
- * @brief Get bit at index via vtable
+ * @brief Get bit at index
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  * @return true if bit is set, false otherwise
  */
-#define BS_GET(bs, i) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_get(_cyan_bsp, (i)); })
+#define BS_GET(N, bs, i)       bitset_##N##_get(&(bs), (i))
 
 /**
- * @brief Toggle bit at index via vtable
+ * @brief Toggle bit at index
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @param i Bit index
  */
-#define BS_TOGGLE(bs, i) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_toggle(_cyan_bsp, (i)); })
+#define BS_TOGGLE(N, bs, i)    bitset_##N##_toggle(&(bs), (i))
 
 /**
- * @brief Union of two bitsets via vtable
+ * @brief Union of two bitsets
+ * @param N The bitset width
  * @param a First bitset (an lvalue)
  * @param b Second bitset (an lvalue)
  * @return New bitset with bits set where either input has bits set
  */
-#define BS_UNION(a, b) \
-    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
-       _cyan_bsa->vt->bs_union(_cyan_bsa, _cyan_bsb); })
+#define BS_UNION(N, a, b)      bitset_##N##_union(&(a), &(b))
 
 /**
- * @brief Intersection of two bitsets via vtable
+ * @brief Intersection of two bitsets
+ * @param N The bitset width
  * @param a First bitset (an lvalue)
  * @param b Second bitset (an lvalue)
  * @return New bitset with bits set where both inputs have bits set
  */
-#define BS_INTERSECT(a, b) \
-    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
-       _cyan_bsa->vt->bs_intersect(_cyan_bsa, _cyan_bsb); })
+#define BS_INTERSECT(N, a, b)  bitset_##N##_intersect(&(a), &(b))
 
 /**
- * @brief Difference of two bitsets via vtable
+ * @brief Difference of two bitsets
+ * @param N The bitset width
  * @param a First bitset (an lvalue)
  * @param b Second bitset (an lvalue)
  * @return New bitset with bits set in a but not in b
  */
-#define BS_DIFF(a, b) \
-    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
-       _cyan_bsa->vt->bs_diff(_cyan_bsa, _cyan_bsb); })
+#define BS_DIFF(N, a, b)       bitset_##N##_diff(&(a), &(b))
 
 /**
- * @brief Complement of a bitset via vtable
+ * @brief Complement of a bitset
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @return New bitset with all bits flipped within the N-bit range
  */
-#define BS_COMPLEMENT(bs) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_complement(_cyan_bsp); })
+#define BS_COMPLEMENT(N, bs)   bitset_##N##_complement(&(bs))
 
 /**
- * @brief Check equality of two bitsets via vtable
+ * @brief Check equality of two bitsets
+ * @param N The bitset width
  * @param a First bitset (an lvalue)
  * @param b Second bitset (an lvalue)
  * @return true if all bits match, false otherwise
  */
-#define BS_EQ(a, b) \
-    ({ __typeof__(a) *_cyan_bsa = &(a); __typeof__(b) *_cyan_bsb = &(b); \
-       _cyan_bsa->vt->bs_eq(_cyan_bsa, _cyan_bsb); })
+#define BS_EQ(N, a, b)         bitset_##N##_eq(&(a), &(b))
 
 /**
- * @brief Count set bits via vtable
+ * @brief Count set bits
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @return Number of bits set to 1
  */
-#define BS_COUNT(bs) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_count(_cyan_bsp); })
+#define BS_COUNT(N, bs)        bitset_##N##_count(&(bs))
 
 /**
- * @brief Check if all bits are set via vtable
+ * @brief Check if all bits are set
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @return true if all N bits are set
  */
-#define BS_ALL(bs) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_all(_cyan_bsp); })
+#define BS_ALL(N, bs)          bitset_##N##_all(&(bs))
 
 /**
- * @brief Check if any bit is set via vtable
+ * @brief Check if any bit is set
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @return true if at least one bit is set
  */
-#define BS_ANY(bs) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_any(_cyan_bsp); })
+#define BS_ANY(N, bs)          bitset_##N##_any(&(bs))
 
 /**
- * @brief Check if no bits are set via vtable
+ * @brief Check if no bits are set
+ * @param N The bitset width
  * @param bs Bitset instance (an lvalue)
  * @return true if no bits are set
  */
-#define BS_NONE(bs) \
-    ({ __typeof__(bs) *_cyan_bsp = &(bs); _cyan_bsp->vt->bs_none(_cyan_bsp); })
-
-#else /* Fallbacks: evaluate their bitset arguments more than once */
-
-#define BS_SET(bs, i)       ((bs).vt->bs_set(&(bs), (i)))
-#define BS_CLEAR(bs, i)     ((bs).vt->bs_clear(&(bs), (i)))
-#define BS_GET(bs, i)       ((bs).vt->bs_get(&(bs), (i)))
-#define BS_TOGGLE(bs, i)    ((bs).vt->bs_toggle(&(bs), (i)))
-#define BS_UNION(a, b)      ((a).vt->bs_union(&(a), &(b)))
-#define BS_INTERSECT(a, b)  ((a).vt->bs_intersect(&(a), &(b)))
-#define BS_DIFF(a, b)       ((a).vt->bs_diff(&(a), &(b)))
-#define BS_COMPLEMENT(bs)   ((bs).vt->bs_complement(&(bs)))
-#define BS_EQ(a, b)         ((a).vt->bs_eq(&(a), &(b)))
-#define BS_COUNT(bs)        ((bs).vt->bs_count(&(bs)))
-#define BS_ALL(bs)          ((bs).vt->bs_all(&(bs)))
-#define BS_ANY(bs)          ((bs).vt->bs_any(&(bs)))
-#define BS_NONE(bs)         ((bs).vt->bs_none(&(bs)))
-
-#endif
+#define BS_NONE(N, bs)         bitset_##N##_none(&(bs))
 
 
 /*============================================================================
@@ -468,9 +349,9 @@
  * @param flag Flag constant (bit position)
  * 
  * Example:
- *   FLAGS_SET(perms, Permissions_READ);
+ *   FLAGS_SET(3, perms, Permissions_READ);
  */
-#define FLAGS_SET(bs, flag)   BS_SET(bs, flag)
+#define FLAGS_SET(N, bs, flag)   BS_SET(N, bs, flag)
 
 /**
  * @brief Clear a flag in a bitset
@@ -478,9 +359,9 @@
  * @param flag Flag constant (bit position)
  * 
  * Example:
- *   FLAGS_CLEAR(perms, Permissions_READ);
+ *   FLAGS_CLEAR(3, perms, Permissions_READ);
  */
-#define FLAGS_CLEAR(bs, flag) BS_CLEAR(bs, flag)
+#define FLAGS_CLEAR(N, bs, flag) BS_CLEAR(N, bs, flag)
 
 /**
  * @brief Check if a flag is set in a bitset
@@ -489,9 +370,9 @@
  * @return true if the flag is set, false otherwise
  * 
  * Example:
- *   if (FLAGS_HAS(perms, Permissions_READ)) { ... }
+ *   if (FLAGS_HAS(3, perms, Permissions_READ)) { ... }
  */
-#define FLAGS_HAS(bs, flag)   BS_GET(bs, flag)
+#define FLAGS_HAS(N, bs, flag)   BS_GET(N, bs, flag)
 
 
 #endif /* CYAN_BITSET_H */

@@ -126,20 +126,20 @@ int main(void) {
     vec_int_free(&v);
     
     /* --------------------------------------------------------
-     * 6. Using vtable convenience macros
+     * 6. Using type-first convenience macros
      * -------------------------------------------------------- */
-    printf("6. Using vtable convenience macros\n");
-    
+    printf("6. Using type-first convenience macros\n");
+
     int data[] = {1, 2, 3, 4, 5};
     Slice_int sl = slice_int_from_array(data, 5);
-    
-    printf("   SLICE_LEN: %zu\n", SLICE_LEN(sl));
-    printf("   SLICE_GET(sl, 2): %d\n", unwrap(SLICE_GET(sl, 2)));
-    
-    Slice_int sub2 = SLICE_SUBSLICE(sl, 1, 4);
-    printf("   SLICE_SUBSLICE(sl, 1, 4): ");
-    for (size_t i = 0; i < SLICE_LEN(sub2); i++) {
-        printf("%d ", unwrap(SLICE_GET(sub2, i)));
+
+    printf("   SLICE_LEN: %zu\n", SLICE_LEN(int, sl));
+    printf("   SLICE_GET(int, sl, 2): %d\n", unwrap(SLICE_GET(int, sl, 2)));
+
+    Slice_int sub2 = SLICE_SUBSLICE(int, sl, 1, 4);
+    printf("   SLICE_SUBSLICE(int, sl, 1, 4): ");
+    for (size_t i = 0; i < SLICE_LEN(int, sub2); i++) {
+        printf("%d ", unwrap(SLICE_GET(int, sub2, i)));
     }
     printf("\n\n");
     

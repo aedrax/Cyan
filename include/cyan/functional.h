@@ -46,7 +46,7 @@
  *   // out = {2, 4, 6}
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define map(arr, len, out, fn) do { \
+#define cyan_map(arr, len, out, fn) do { \
     __typeof__(&(arr)[0]) _cyan_map_arr = (arr); \
     __typeof__(&(out)[0]) _cyan_map_out = (out); \
     size_t _cyan_map_len = (len); \
@@ -56,7 +56,7 @@
 } while(0)
 #else
 /* Fallback: evaluates arr, len, and out more than once */
-#define map(arr, len, out, fn) do { \
+#define cyan_map(arr, len, out, fn) do { \
     for (size_t _cyan_map_i = 0; _cyan_map_i < (len); _cyan_map_i++) { \
         (out)[_cyan_map_i] = fn((arr)[_cyan_map_i]); \
     } \
@@ -88,7 +88,7 @@
  *   // out = {2, 4}, out_len = 2
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define filter(arr, len, out, out_len, pred) do { \
+#define cyan_filter(arr, len, out, out_len, pred) do { \
     __typeof__(&(arr)[0]) _cyan_filter_arr = (arr); \
     __typeof__(&(out)[0]) _cyan_filter_out = (out); \
     size_t _cyan_filter_len = (len); \
@@ -102,7 +102,7 @@
 } while(0)
 #else
 /* Fallback: evaluates arr, len, and out more than once */
-#define filter(arr, len, out, out_len, pred) do { \
+#define cyan_filter(arr, len, out, out_len, pred) do { \
     size_t _cyan_filter_j = 0; \
     for (size_t _cyan_filter_i = 0; _cyan_filter_i < (len); _cyan_filter_i++) { \
         if (pred((arr)[_cyan_filter_i])) { \
@@ -137,7 +137,7 @@
  *   // sum = 15
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define reduce(result, arr, len, init, acc_fn) do { \
+#define cyan_reduce(result, arr, len, init, acc_fn) do { \
     __typeof__(&(arr)[0]) _cyan_reduce_arr = (arr); \
     size_t _cyan_reduce_len = (len); \
     (result) = (init); \
@@ -147,7 +147,7 @@
 } while(0)
 #else
 /* Fallback: evaluates arr and len more than once */
-#define reduce(result, arr, len, init, acc_fn) do { \
+#define cyan_reduce(result, arr, len, init, acc_fn) do { \
     (result) = (init); \
     for (size_t _cyan_reduce_i = 0; _cyan_reduce_i < (len); _cyan_reduce_i++) { \
         (result) = acc_fn((result), (arr)[_cyan_reduce_i]); \
@@ -176,7 +176,7 @@
  *   // prints: 1, 2, 3
  */
 #if defined(__GNUC__) || defined(__clang__)
-#define foreach(arr, len, fn) do { \
+#define cyan_foreach(arr, len, fn) do { \
     __typeof__(&(arr)[0]) _cyan_foreach_arr = (arr); \
     size_t _cyan_foreach_len = (len); \
     for (size_t _cyan_foreach_i = 0; _cyan_foreach_i < _cyan_foreach_len; _cyan_foreach_i++) { \
@@ -185,12 +185,28 @@
 } while(0)
 #else
 /* Fallback: evaluates arr and len more than once */
-#define foreach(arr, len, fn) do { \
+#define cyan_foreach(arr, len, fn) do { \
     for (size_t _cyan_foreach_i = 0; _cyan_foreach_i < (len); _cyan_foreach_i++) { \
         fn((arr)[_cyan_foreach_i]); \
     } \
 } while(0)
 #endif
+
+/*============================================================================
+ * Short Names (suppress with CYAN_NO_SHORT_NAMES)
+ *============================================================================
+ * map/filter/reduce/foreach are common identifiers; the cyan_-prefixed
+ * implementations above are always available.
+ */
+
+#ifndef CYAN_NO_SHORT_NAMES
+
+#define map(arr, len, out, fn) cyan_map(arr, len, out, fn)
+#define filter(arr, len, out, out_len, pred) cyan_filter(arr, len, out, out_len, pred)
+#define reduce(result, arr, len, init, acc_fn) cyan_reduce(result, arr, len, init, acc_fn)
+#define foreach(arr, len, fn) cyan_foreach(arr, len, fn)
+
+#endif /* CYAN_NO_SHORT_NAMES */
 
 /*============================================================================
  * Vector-specific functional operations
@@ -221,7 +237,7 @@
 #define VEC_MAP_DEFINE(T_in, T_out) \
     typedef T_out (*_vec_map_fn_##T_in##_to_##T_out)(T_in); \
     \
-    static inline Vec_##T_out vec_map_##T_in##_to_##T_out( \
+    CYAN_UNUSED static inline Vec_##T_out vec_map_##T_in##_to_##T_out( \
         Vec_##T_in *v, \
         _vec_map_fn_##T_in##_to_##T_out fn \
     ) { \
@@ -245,7 +261,7 @@
 #define VEC_FILTER_DEFINE(T) \
     typedef bool (*_vec_filter_pred_##T)(T); \
     \
-    static inline Vec_##T vec_filter_##T( \
+    CYAN_UNUSED static inline Vec_##T vec_filter_##T( \
         Vec_##T *v, \
         _vec_filter_pred_##T pred \
     ) { \
@@ -272,7 +288,7 @@
 #define VEC_REDUCE_DEFINE(T, R) \
     typedef R (*_vec_reduce_fn_##T##_to_##R)(R, T); \
     \
-    static inline R vec_reduce_##T##_to_##R( \
+    CYAN_UNUSED static inline R vec_reduce_##T##_to_##R( \
         Vec_##T *v, \
         R init, \
         _vec_reduce_fn_##T##_to_##R fn \
@@ -297,7 +313,7 @@
 #define VEC_FOREACH_DEFINE(T) \
     typedef void (*_vec_foreach_fn_##T)(T); \
     \
-    static inline void vec_foreach_##T( \
+    CYAN_UNUSED static inline void vec_foreach_##T( \
         Vec_##T *v, \
         _vec_foreach_fn_##T fn \
     ) { \

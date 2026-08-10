@@ -122,110 +122,81 @@ i32 main(void) {
         weak_i32_release(&weak);
     }
     
-    // Example 7: Vtable Method-Style API for UniquePtr
-    printf("\n7. UniquePtr Vtable API:\n");
+    // Example 7: Type-First Convenience Macros for UniquePtr
+    printf("\n7. UniquePtr Convenience Macros:\n");
     {
         UniquePtr_i32 u = unique_i32_new(555);
-        
-        // Direct vtable access
-        printf("   Direct vtable access:\n");
-        printf("      u.vt->uptr_deref(&u) = %d\n", u.vt->uptr_deref(&u));
-        printf("      u.vt->uptr_get(&u) = %p\n", (void *)u.vt->uptr_get(&u));
-        
-        // Convenience macros
+
+        // Macros take the pointee type first, then the pointer
         printf("   Convenience macros:\n");
-        printf("      UPTR_DEREF(u) = %d\n", UPTR_DEREF(u));
-        printf("      UPTR_GET(u) = %p\n", (void *)UPTR_GET(u));
-        
-        // Move using vtable macro
-        UniquePtr_i32 u2 = UPTR_MOVE(u);
+        printf("      UPTR_DEREF(i32, u) = %d\n", UPTR_DEREF(i32, u));
+        printf("      UPTR_GET(i32, u) = %p\n", (void *)UPTR_GET(i32, u));
+
+        // Move using the macro
+        UniquePtr_i32 u2 = UPTR_MOVE(i32, u);
         printf("   After UPTR_MOVE:\n");
-        printf("      Original ptr: %p (should be NULL)\n", (void *)UPTR_GET(u));
-        printf("      New ptr value: %d\n", UPTR_DEREF(u2));
-        
-        UPTR_FREE(u2);
+        printf("      Original ptr: %p (should be NULL)\n", (void *)UPTR_GET(i32, u));
+        printf("      New ptr value: %d\n", UPTR_DEREF(i32, u2));
+
+        UPTR_FREE(i32, u2);
     }
-    
-    // Example 8: Vtable Method-Style API for SharedPtr
-    printf("\n8. SharedPtr Vtable API:\n");
+
+    // Example 8: Type-First Convenience Macros for SharedPtr
+    printf("\n8. SharedPtr Convenience Macros:\n");
     {
         SharedPtr_i32 s = shared_i32_new(777);
-        
-        // Direct vtable access
-        printf("   Direct vtable access:\n");
-        printf("      s.vt->sptr_deref(&s) = %d\n", s.vt->sptr_deref(&s));
-        printf("      s.vt->sptr_count(&s) = %zu\n", s.vt->sptr_count(&s));
-        
-        // Convenience macros
+
         printf("   Convenience macros:\n");
-        printf("      SPTR_DEREF(s) = %d\n", SPTR_DEREF(s));
-        printf("      SPTR_COUNT(s) = %zu\n", SPTR_COUNT(s));
-        
-        // Clone using vtable macro
-        SharedPtr_i32 s2 = SPTR_CLONE(s);
+        printf("      SPTR_DEREF(i32, s) = %d\n", SPTR_DEREF(i32, s));
+        printf("      SPTR_COUNT(i32, s) = %zu\n", SPTR_COUNT(i32, s));
+
+        // Clone using the macro
+        SharedPtr_i32 s2 = SPTR_CLONE(i32, s);
         printf("   After SPTR_CLONE:\n");
-        printf("      SPTR_COUNT(s) = %zu\n", SPTR_COUNT(s));
-        printf("      SPTR_COUNT(s2) = %zu\n", SPTR_COUNT(s2));
-        
-        // Shared vtable verification
-        printf("   Shared vtable (memory efficient):\n");
-        printf("      s.vt == s2.vt: %s\n", s.vt == s2.vt ? "yes" : "no");
-        
-        SPTR_RELEASE(s2);
-        SPTR_RELEASE(s);
+        printf("      SPTR_COUNT(i32, s) = %zu\n", SPTR_COUNT(i32, s));
+        printf("      SPTR_COUNT(i32, s2) = %zu\n", SPTR_COUNT(i32, s2));
+
+        SPTR_RELEASE(i32, s2);
+        SPTR_RELEASE(i32, s);
     }
-    
-    // Example 9: Vtable Method-Style API for WeakPtr
-    printf("\n9. WeakPtr Vtable API:\n");
+
+    // Example 9: Type-First Convenience Macros for WeakPtr
+    printf("\n9. WeakPtr Convenience Macros:\n");
     {
         SharedPtr_i32 shared = shared_i32_new(888);
         WeakPtr_i32 w = weak_i32_from_shared(&shared);
-        
-        // Direct vtable access
-        printf("   Direct vtable access:\n");
-        printf("      w.vt->wptr_is_expired(&w) = %s\n", 
-               w.vt->wptr_is_expired(&w) ? "yes" : "no");
-        
-        // Upgrade via vtable - returns Option_SharedPtr_i32
-        Option_SharedPtr_i32 upgraded = w.vt->wptr_upgrade(&w);
+
+        printf("   Convenience macros:\n");
+        printf("      WPTR_IS_EXPIRED(i32, w) = %s\n",
+               WPTR_IS_EXPIRED(i32, w) ? "yes" : "no");
+
+        // Upgrade via macro - returns Option_SharedPtr_i32
+        Option_SharedPtr_i32 upgraded = WPTR_UPGRADE(i32, w);
         if (upgraded.has_value) {
-            printf("      w.vt->wptr_upgrade(&w) = Some(%d)\n", 
+            printf("      WPTR_UPGRADE(i32, w) = Some(%d)\n",
                    shared_i32_deref(&upgraded.value));
             shared_i32_release(&upgraded.value);
         }
-        
-        // Convenience macros
-        printf("   Convenience macros:\n");
-        printf("      WPTR_IS_EXPIRED(w) = %s\n", 
-               WPTR_IS_EXPIRED(w) ? "yes" : "no");
-        
-        // Upgrade via macro - returns Option_SharedPtr_i32
-        Option_SharedPtr_i32 upgraded2 = WPTR_UPGRADE(w);
-        if (upgraded2.has_value) {
-            printf("      WPTR_UPGRADE(w) = Some(%d)\n", 
-                   shared_i32_deref(&upgraded2.value));
-            shared_i32_release(&upgraded2.value);
-        }
-        
-        // Shared vtable verification
-        WeakPtr_i32 w2 = weak_i32_from_shared(&shared);
-        printf("   Shared vtable (memory efficient):\n");
-        printf("      w.vt == w2.vt: %s\n", w.vt == w2.vt ? "yes" : "no");
-        
+
+        // Clone the weak pointer itself (new in 0.2.0)
+        WeakPtr_i32 w2 = WPTR_CLONE(i32, w);
+        printf("      WPTR_CLONE(i32, w): is_expired = %s\n",
+               WPTR_IS_EXPIRED(i32, w2) ? "yes" : "no");
+
         // Release shared pointer to demonstrate expired weak pointer
         shared_i32_release(&shared);
         printf("   After releasing shared pointer:\n");
-        printf("      WPTR_IS_EXPIRED(w) = %s\n", 
-               WPTR_IS_EXPIRED(w) ? "yes" : "no");
-        
+        printf("      WPTR_IS_EXPIRED(i32, w) = %s\n",
+               WPTR_IS_EXPIRED(i32, w) ? "yes" : "no");
+
         // Upgrade expired weak pointer - returns None
-        Option_SharedPtr_i32 failed = WPTR_UPGRADE(w);
-        printf("      WPTR_UPGRADE(w) = %s\n", 
+        Option_SharedPtr_i32 failed = WPTR_UPGRADE(i32, w);
+        printf("      WPTR_UPGRADE(i32, w) = %s\n",
                failed.has_value ? "Some" : "None");
-        
-        // Release weak pointers via vtable macro
-        WPTR_RELEASE(w);
-        WPTR_RELEASE(w2);
+
+        // Release weak pointers via the macro
+        WPTR_RELEASE(i32, w);
+        WPTR_RELEASE(i32, w2);
     }
     
     printf("\n=== Done ===\n");

@@ -104,24 +104,24 @@ int main(void) {
     printf("\n");
     
     /* --------------------------------------------------------
-     * 8. Using vtable convenience macros
+     * 8. Using type-first convenience macros
      * -------------------------------------------------------- */
-    printf("8. Using vtable convenience macros\n");
-    
+    printf("8. Using type-first convenience macros\n");
+
     HashMap_int_int inventory = hashmap_int_int_new();
-    
-    MAP_INSERT(inventory, 1, 50);   /* Item 1: quantity 50 */
-    MAP_INSERT(inventory, 2, 25);   /* Item 2: quantity 25 */
-    MAP_INSERT(inventory, 3, 100);  /* Item 3: quantity 100 */
-    
-    printf("   Inventory length: %zu\n", MAP_LEN(inventory));
-    printf("   Item 2 quantity: %d\n", unwrap(MAP_GET(inventory, 2)));
-    printf("   Has item 3: %s\n", MAP_CONTAINS(inventory, 3) ? "yes" : "no");
-    
-    MAP_REMOVE(inventory, 1);
-    printf("   After removing item 1, length: %zu\n\n", MAP_LEN(inventory));
-    
-    MAP_FREE(inventory);
+
+    MAP_INSERT(int, int, inventory, 1, 50);   /* Item 1: quantity 50 */
+    MAP_INSERT(int, int, inventory, 2, 25);   /* Item 2: quantity 25 */
+    MAP_INSERT(int, int, inventory, 3, 100);  /* Item 3: quantity 100 */
+
+    printf("   Inventory length: %zu\n", MAP_LEN(int, int, inventory));
+    printf("   Item 2 quantity: %d\n", unwrap(MAP_GET(int, int, inventory, 2)));
+    printf("   Has item 3: %s\n", MAP_CONTAINS(int, int, inventory, 3) ? "yes" : "no");
+
+    MAP_REMOVE(int, int, inventory, 1);
+    printf("   After removing item 1, length: %zu\n\n", MAP_LEN(int, int, inventory));
+
+    MAP_FREE(int, int, inventory);
     
     /* --------------------------------------------------------
      * 9. Pre-allocated capacity

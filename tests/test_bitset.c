@@ -888,8 +888,9 @@ static enum theft_trial_res prop_count_predicates(struct theft *t, void *arg1) {
 
 #define MIN_TEST_TRIALS 100
 
-int run_bitset_tests(theft_seed seed) {
+int run_bitset_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    int num_run = 0;
     
     printf("\nBitset Type Tests:\n");
     
@@ -907,6 +908,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 4: Bitset set/clear/get consistency */
@@ -926,6 +928,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 10: From raw masking */
@@ -942,6 +945,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 6: Set operations match bitwise equivalents */
@@ -961,6 +965,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 7: Complement round-trip */
@@ -977,6 +982,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 8: Equality reflexivity and correctness */
@@ -996,6 +1002,7 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 9: Count predicates consistency */
@@ -1012,7 +1019,9 @@ int run_bitset_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
+    *num_tests = num_run;
     return failures;
 }

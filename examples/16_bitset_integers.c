@@ -182,42 +182,42 @@ int main(void) {
     Bitset_4 perms = bitset_4_new();
     
     // Set permissions using named flags
-    FLAGS_SET(perms, FilePerms_READ);
-    FLAGS_SET(perms, FilePerms_WRITE);
+    FLAGS_SET(4, perms, FilePerms_READ);
+    FLAGS_SET(4, perms, FilePerms_WRITE);
     
     printf("   Permissions set: READ, WRITE\n");
-    printf("   Has READ:    %s\n", FLAGS_HAS(perms, FilePerms_READ) ? "yes" : "no");
-    printf("   Has WRITE:   %s\n", FLAGS_HAS(perms, FilePerms_WRITE) ? "yes" : "no");
-    printf("   Has EXECUTE: %s\n", FLAGS_HAS(perms, FilePerms_EXECUTE) ? "yes" : "no");
-    printf("   Has HIDDEN:  %s\n", FLAGS_HAS(perms, FilePerms_HIDDEN) ? "yes" : "no");
+    printf("   Has READ:    %s\n", FLAGS_HAS(4, perms, FilePerms_READ) ? "yes" : "no");
+    printf("   Has WRITE:   %s\n", FLAGS_HAS(4, perms, FilePerms_WRITE) ? "yes" : "no");
+    printf("   Has EXECUTE: %s\n", FLAGS_HAS(4, perms, FilePerms_EXECUTE) ? "yes" : "no");
+    printf("   Has HIDDEN:  %s\n", FLAGS_HAS(4, perms, FilePerms_HIDDEN) ? "yes" : "no");
     
     // Clear a permission
-    FLAGS_CLEAR(perms, FilePerms_WRITE);
+    FLAGS_CLEAR(4, perms, FilePerms_WRITE);
     printf("   After clearing WRITE:\n");
-    printf("   Has WRITE:   %s\n", FLAGS_HAS(perms, FilePerms_WRITE) ? "yes" : "no");
+    printf("   Has WRITE:   %s\n", FLAGS_HAS(4, perms, FilePerms_WRITE) ? "yes" : "no");
 
     // =========================================================================
-    // Part 7: Vtable-Style API
+    // Part 7: Convenience Macros
     // =========================================================================
-    printf("\n7. Vtable-Style API (Convenience Macros):\n");
+    printf("\n7. Type-First Convenience Macros:\n");
     
     Bitset_8 vt_bs = bitset_8_new();
     
-    // Using BS_* convenience macros
-    BS_SET(vt_bs, 1);
-    BS_SET(vt_bs, 5);
-    printf("   After BS_SET(1, 5): count=%u\n", BS_COUNT(vt_bs));
+    // BS_* macros take the bit width first, then the bitset
+    BS_SET(8, vt_bs, 1);
+    BS_SET(8, vt_bs, 5);
+    printf("   After BS_SET(1, 5): count=%u\n", BS_COUNT(8, vt_bs));
     printf("   BS_GET(1)=%s, BS_GET(2)=%s\n",
-           BS_GET(vt_bs, 1) ? "true" : "false",
-           BS_GET(vt_bs, 2) ? "true" : "false");
+           BS_GET(8, vt_bs, 1) ? "true" : "false",
+           BS_GET(8, vt_bs, 2) ? "true" : "false");
     
-    BS_TOGGLE(vt_bs, 1);
+    BS_TOGGLE(8, vt_bs, 1);
     printf("   After BS_TOGGLE(1): BS_GET(1)=%s\n",
-           BS_GET(vt_bs, 1) ? "true" : "false");
+           BS_GET(8, vt_bs, 1) ? "true" : "false");
     
     printf("   BS_ANY=%s, BS_NONE=%s\n",
-           BS_ANY(vt_bs) ? "true" : "false",
-           BS_NONE(vt_bs) ? "true" : "false");
+           BS_ANY(8, vt_bs) ? "true" : "false",
+           BS_NONE(8, vt_bs) ? "true" : "false");
 
     printf("\n=== Done ===\n");
     return 0;

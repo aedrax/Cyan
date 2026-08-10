@@ -304,8 +304,10 @@ static FunctionalTest functional_tests[] = {
 
 #define NUM_FUNCTIONAL_TESTS (sizeof(functional_tests) / sizeof(functional_tests[0]))
 
-int run_functional_tests(theft_seed seed) {
+int run_functional_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_FUNCTIONAL_TESTS;
     
     printf("\nFunctional Primitives Tests:\n");
     

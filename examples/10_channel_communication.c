@@ -106,21 +106,21 @@ int main(void) {
     printf("   Channel empty, recv returns None\n\n");
     
     /* --------------------------------------------------------
-     * 7. Using vtable macros
+     * 7. Using type-first convenience macros
      * -------------------------------------------------------- */
-    printf("7. Using vtable convenience macros\n");
+    printf("7. Using type-first convenience macros\n");
     Channel_int *ch2 = chan_int_new(3);
-    
-    CHAN_SEND(ch2, 42);
-    CHAN_SEND(ch2, 84);
-    
-    Option_int v = CHAN_RECV(ch2);
+
+    CHAN_SEND(int, ch2, 42);
+    CHAN_SEND(int, ch2, 84);
+
+    Option_int v = CHAN_RECV(int, ch2);
     printf("   CHAN_RECV: %d\n", unwrap(v));
-    
-    printf("   CHAN_IS_CLOSED: %s\n", CHAN_IS_CLOSED(ch2) ? "yes" : "no");
-    
-    CHAN_CLOSE(ch2);
-    CHAN_FREE(ch2);
+
+    printf("   CHAN_IS_CLOSED: %s\n", CHAN_IS_CLOSED(int, ch2) ? "yes" : "no");
+
+    CHAN_CLOSE(int, ch2);
+    CHAN_FREE(int, ch2);
     printf("   Channel freed via CHAN_FREE\n\n");
     
     /* --------------------------------------------------------

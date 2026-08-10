@@ -7,6 +7,11 @@
  * - Property 10: pop returns last element and decreases length
  * - Property 11: get returns None for out-of-bounds indices
  * - Property 12: vector length equals pushes minus pops
+ * - Property 13: insert/remove invariants
+ * - Property 14: extend equals repeated push
+ * - Property 15: reserve never loses elements
+ * - Property 16: clear resets length, vector remains usable
+ * - Property 17: Vector macro == function behavioral equivalence
  */
 
 #include <stdio.h>
@@ -31,13 +36,7 @@ static enum theft_trial_res prop_push_and_get(struct theft *t, void *arg1) {
     int val = (int)(*val_ptr);
     
     Vec_int v = vec_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (v.vt == NULL) {
-        vec_int_free(&v);
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     size_t initial_len = vec_int_len(&v);
     
     /* Push the element */
@@ -80,13 +79,7 @@ static enum theft_trial_res prop_pop(struct theft *t, void *arg1) {
     
     /* Test pop on empty vector returns None */
     Vec_int empty_v = vec_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (empty_v.vt == NULL) {
-        vec_int_free(&empty_v);
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     Option_int empty_pop = vec_int_pop(&empty_v);
     if (!is_none(empty_pop)) {
         vec_int_free(&empty_v);
@@ -138,13 +131,7 @@ static enum theft_trial_res prop_out_of_bounds(struct theft *t, void *arg1) {
     int val = (int)(*val_ptr);
     
     Vec_int v = vec_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (v.vt == NULL) {
-        vec_int_free(&v);
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* Push some elements */
     vec_int_push(&v, val);
     vec_int_push(&v, val + 1);
@@ -192,13 +179,7 @@ static enum theft_trial_res prop_length_tracking(struct theft *t, void *arg1) {
     unsigned int seed = (unsigned int)((*val_ptr) & 0xFFFFFFFF);
     
     Vec_int v = vec_int_new();
-    
-    /* Verify vt pointer is set after creation */
-    if (v.vt == NULL) {
-        vec_int_free(&v);
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     size_t expected_len = 0;
     
     /* Perform a sequence of push and pop operations */
@@ -229,155 +210,343 @@ static enum theft_trial_res prop_length_tracking(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
- * Property 1: Shared vtable instances (Vector)
- * For any two instances of Vec_T, their vtable pointers shall be equal
- * (point to the same address).
+ * Property 13: insert/remove invariants
+ * Inserting at an index makes get(idx) return the element and shifts the
+ * tail up; remove returns the element and shifts the tail back down.
  *============================================================================*/
 
-static enum theft_trial_res prop_shared_vtable(struct theft *t, void *arg1) {
+static enum theft_trial_res prop_insert_remove(struct theft *t, void *arg1) {
     (void)t;
     int64_t *val_ptr = (int64_t *)arg1;
-    int val = (int)(*val_ptr);
-    
-    /* Create multiple vector instances using different constructors */
-    Vec_int v1 = vec_int_new();
-    Vec_int v2 = vec_int_new();
-    Vec_int v3 = vec_int_with_capacity(10);
-    Vec_int v4 = vec_int_with_capacity((size_t)(val > 0 ? val % 100 : (-val) % 100 + 1));
-    
-    /* All vtable pointers should be non-null */
-    if (v1.vt == NULL || v2.vt == NULL || v3.vt == NULL || v4.vt == NULL) {
-        vec_int_free(&v1);
-        vec_int_free(&v2);
-        vec_int_free(&v3);
-        vec_int_free(&v4);
+    int val = (int)(*val_ptr % 100000);
+
+    Vec_int v = vec_int_new();
+
+    /* Start with three known elements */
+    vec_int_push(&v, val);
+    vec_int_push(&v, val + 1);
+    vec_int_push(&v, val + 2);
+
+    /* Insert in the middle: [val, NEW, val+1, val+2] */
+    int inserted = val + 100;
+    vec_int_insert(&v, 1, inserted);
+
+    if (vec_int_len(&v) != 4) {
+        vec_int_free(&v);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* All vtable pointers should point to the same address */
-    if (v1.vt != v2.vt || v2.vt != v3.vt || v3.vt != v4.vt) {
-        vec_int_free(&v1);
-        vec_int_free(&v2);
-        vec_int_free(&v3);
-        vec_int_free(&v4);
+
+    /* get(idx) returns the inserted element */
+    Option_int at_idx = vec_int_get(&v, 1);
+    if (!is_some(at_idx) || unwrap(at_idx) != inserted) {
+        vec_int_free(&v);
         return THEFT_TRIAL_FAIL;
     }
-    
-    vec_int_free(&v1);
-    vec_int_free(&v2);
-    vec_int_free(&v3);
-    vec_int_free(&v4);
+
+    /* Tail elements shifted up by one */
+    if (unwrap(vec_int_get(&v, 2)) != val + 1 || unwrap(vec_int_get(&v, 3)) != val + 2) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Remove returns the element and shifts the tail back down */
+    Option_int removed = vec_int_remove(&v, 1);
+    if (!is_some(removed) || unwrap(removed) != inserted) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    if (vec_int_len(&v) != 3) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    if (unwrap(vec_int_get(&v, 0)) != val ||
+        unwrap(vec_int_get(&v, 1)) != val + 1 ||
+        unwrap(vec_int_get(&v, 2)) != val + 2) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Remove out of bounds returns None and leaves the vector untouched */
+    Option_int oob_remove = vec_int_remove(&v, vec_int_len(&v));
+    if (!is_none(oob_remove) || vec_int_len(&v) != 3) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    vec_int_free(&v);
     return THEFT_TRIAL_PASS;
 }
 
 /*============================================================================
- * Property 2: Vector vtable behavioral equivalence
- * For any Vec_T instance, any valid element, and any valid index, calling
- * operations through the vtable (v.vt->push, v.vt->pop, v.vt->get) shall
- * produce identical results to calling the standalone functions.
+ * Property 14: extend equals repeated push
+ * Extending a vector with n elements produces the same contents as pushing
+ * the same n elements one at a time.
  *============================================================================*/
 
-static enum theft_trial_res prop_vtable_behavioral_equivalence(struct theft *t, void *arg1) {
+static enum theft_trial_res prop_extend_equals_push(struct theft *t, void *arg1) {
     (void)t;
     int64_t *val_ptr = (int64_t *)arg1;
-    int val = (int)(*val_ptr);
-    
-    /* Create two identical vectors - one for vtable ops, one for standalone ops */
-    Vec_int v_vtable = vec_int_new();
-    Vec_int v_standalone = vec_int_new();
-    
-    /* Test push equivalence: vtable vs standalone */
-    v_vtable.vt->push(&v_vtable, val);
-    vec_int_push(&v_standalone, val);
-    
-    v_vtable.vt->push(&v_vtable, val + 1);
-    vec_int_push(&v_standalone, val + 1);
-    
-    v_vtable.vt->push(&v_vtable, val + 2);
-    vec_int_push(&v_standalone, val + 2);
-    
+    int base_val = (int)(*val_ptr % 100000);
+
+    int src[20];
+    size_t n = (size_t)(((*val_ptr < 0 ? -*val_ptr : *val_ptr) % 20) + 1);
+    for (size_t i = 0; i < n; i++) {
+        src[i] = base_val + (int)i;
+    }
+
+    Vec_int v_extend = vec_int_new();
+    Vec_int v_push = vec_int_new();
+
+    /* Seed both with one element to exercise appending onto content */
+    vec_int_push(&v_extend, base_val - 1);
+    vec_int_push(&v_push, base_val - 1);
+
+    vec_int_extend(&v_extend, src, n);
+    for (size_t i = 0; i < n; i++) {
+        vec_int_push(&v_push, src[i]);
+    }
+
+    /* Lengths must match */
+    if (vec_int_len(&v_extend) != vec_int_len(&v_push)) {
+        vec_int_free(&v_extend);
+        vec_int_free(&v_push);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Contents must match element-wise */
+    for (size_t i = 0; i < vec_int_len(&v_extend); i++) {
+        if (unwrap(vec_int_get(&v_extend, i)) != unwrap(vec_int_get(&v_push, i))) {
+            vec_int_free(&v_extend);
+            vec_int_free(&v_push);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* Extending with n == 0 is a no-op */
+    size_t len_before = vec_int_len(&v_extend);
+    vec_int_extend(&v_extend, NULL, 0);
+    if (vec_int_len(&v_extend) != len_before) {
+        vec_int_free(&v_extend);
+        vec_int_free(&v_push);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    vec_int_free(&v_extend);
+    vec_int_free(&v_push);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 15: reserve never loses elements
+ * Reserving capacity (larger or smaller than current) preserves length and
+ * all stored elements.
+ *============================================================================*/
+
+static enum theft_trial_res prop_reserve_preserves_elements(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int base_val = (int)(*val_ptr % 100000);
+
+    Vec_int v = vec_int_new();
+    for (int i = 0; i < 10; i++) {
+        vec_int_push(&v, base_val + i);
+    }
+
+    /* Reserve well beyond the current capacity */
+    vec_int_reserve(&v, 256);
+    if (v.cap < 256 || vec_int_len(&v) != 10) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    for (int i = 0; i < 10; i++) {
+        Option_int opt = vec_int_get(&v, (size_t)i);
+        if (!is_some(opt) || unwrap(opt) != base_val + i) {
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* Reserving less than the current capacity never shrinks */
+    size_t cap_before = v.cap;
+    vec_int_reserve(&v, 1);
+    if (v.cap != cap_before || vec_int_len(&v) != 10) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    for (int i = 0; i < 10; i++) {
+        Option_int opt = vec_int_get(&v, (size_t)i);
+        if (!is_some(opt) || unwrap(opt) != base_val + i) {
+            vec_int_free(&v);
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 16: clear resets length, vector remains usable
+ * After clear, length is 0 and get returns None; pushing again makes the
+ * vector fully usable.
+ *============================================================================*/
+
+static enum theft_trial_res prop_clear_then_reuse(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr % 100000);
+
+    Vec_int v = vec_int_new();
+    vec_int_push(&v, val);
+    vec_int_push(&v, val + 1);
+
+    vec_int_clear(&v);
+
+    /* Length is 0 and old elements are unreachable */
+    if (vec_int_len(&v) != 0) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+    if (!is_none(vec_int_get(&v, 0))) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Re-push works after clear */
+    vec_int_push(&v, val + 2);
+    Option_int opt = vec_int_get(&v, 0);
+    if (vec_int_len(&v) != 1 || !is_some(opt) || unwrap(opt) != val + 2) {
+        vec_int_free(&v);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    vec_int_free(&v);
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 17: Vector macro == function behavioral equivalence
+ * For any Vec_T instance, the type-first VEC_* macros produce identical
+ * results to calling the standalone vec_T_* functions.
+ *============================================================================*/
+
+static enum theft_trial_res prop_macro_fn_equivalence(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr % 100000);
+
+    /* Create two identical vectors - one for macro ops, one for standalone ops */
+    Vec_int v_macro = vec_int_new();
+    Vec_int v_fn = vec_int_new();
+
+    /* Test push equivalence: macro vs standalone */
+    VEC_PUSH(int, v_macro, val);
+    vec_int_push(&v_fn, val);
+
+    VEC_PUSH(int, v_macro, val + 1);
+    vec_int_push(&v_fn, val + 1);
+
+    VEC_PUSH(int, v_macro, val + 2);
+    vec_int_push(&v_fn, val + 2);
+
     /* Test len equivalence */
-    size_t len_vtable = v_vtable.vt->len(&v_vtable);
-    size_t len_standalone = vec_int_len(&v_standalone);
-    
-    if (len_vtable != len_standalone) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
+    if (VEC_LEN(int, v_macro) != vec_int_len(&v_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
+    /* Test insert equivalence */
+    VEC_INSERT(int, v_macro, 1, val + 10);
+    vec_int_insert(&v_fn, 1, val + 10);
+
     /* Test get equivalence for all indices */
-    for (size_t i = 0; i < len_vtable; i++) {
-        Option_int opt_vtable = v_vtable.vt->get(&v_vtable, i);
-        Option_int opt_standalone = vec_int_get(&v_standalone, i);
-        
-        if (is_some(opt_vtable) != is_some(opt_standalone)) {
-            vec_int_free(&v_vtable);
-            vec_int_free(&v_standalone);
+    for (size_t i = 0; i < VEC_LEN(int, v_macro); i++) {
+        Option_int opt_macro = VEC_GET(int, v_macro, i);
+        Option_int opt_fn = vec_int_get(&v_fn, i);
+
+        if (is_some(opt_macro) != is_some(opt_fn)) {
+            vec_int_free(&v_macro);
+            vec_int_free(&v_fn);
             return THEFT_TRIAL_FAIL;
         }
-        
-        if (is_some(opt_vtable) && unwrap(opt_vtable) != unwrap(opt_standalone)) {
-            vec_int_free(&v_vtable);
-            vec_int_free(&v_standalone);
+
+        if (is_some(opt_macro) && unwrap(opt_macro) != unwrap(opt_fn)) {
+            vec_int_free(&v_macro);
+            vec_int_free(&v_fn);
             return THEFT_TRIAL_FAIL;
         }
     }
-    
-    /* Test get out-of-bounds equivalence */
-    Option_int oob_vtable = v_vtable.vt->get(&v_vtable, len_vtable + 10);
-    Option_int oob_standalone = vec_int_get(&v_standalone, len_standalone + 10);
-    
-    if (is_none(oob_vtable) != is_none(oob_standalone)) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
+
+    /* Test remove equivalence */
+    Option_int rem_macro = VEC_REMOVE(int, v_macro, 1);
+    Option_int rem_fn = vec_int_remove(&v_fn, 1);
+
+    if (is_some(rem_macro) != is_some(rem_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
+
+    if (is_some(rem_macro) && unwrap(rem_macro) != unwrap(rem_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Test extend equivalence */
+    int extra[3] = { val + 20, val + 21, val + 22 };
+    VEC_EXTEND(int, v_macro, extra, 3);
+    vec_int_extend(&v_fn, extra, 3);
+
+    if (VEC_LEN(int, v_macro) != vec_int_len(&v_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* Test reserve equivalence */
+    VEC_RESERVE(int, v_macro, 64);
+    vec_int_reserve(&v_fn, 64);
+
+    if (v_macro.cap != v_fn.cap) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
+        return THEFT_TRIAL_FAIL;
+    }
+
     /* Test pop equivalence */
-    Option_int pop_vtable = v_vtable.vt->pop(&v_vtable);
-    Option_int pop_standalone = vec_int_pop(&v_standalone);
-    
-    if (is_some(pop_vtable) != is_some(pop_standalone)) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
+    Option_int pop_macro = VEC_POP(int, v_macro);
+    Option_int pop_fn = vec_int_pop(&v_fn);
+
+    if (is_some(pop_macro) != is_some(pop_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    if (is_some(pop_vtable) && unwrap(pop_vtable) != unwrap(pop_standalone)) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
+
+    if (is_some(pop_macro) && unwrap(pop_macro) != unwrap(pop_fn)) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* Verify lengths are still equal after pop */
-    if (v_vtable.vt->len(&v_vtable) != vec_int_len(&v_standalone)) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
+
+    /* Test clear equivalence */
+    VEC_CLEAR(int, v_macro);
+    vec_int_clear(&v_fn);
+
+    if (VEC_LEN(int, v_macro) != vec_int_len(&v_fn) || VEC_LEN(int, v_macro) != 0) {
+        vec_int_free(&v_macro);
+        vec_int_free(&v_fn);
         return THEFT_TRIAL_FAIL;
     }
-    
-    /* Test pop on empty vector equivalence */
-    Vec_int empty_vtable = vec_int_new();
-    Vec_int empty_standalone = vec_int_new();
-    
-    Option_int empty_pop_vtable = empty_vtable.vt->pop(&empty_vtable);
-    Option_int empty_pop_standalone = vec_int_pop(&empty_standalone);
-    
-    if (is_none(empty_pop_vtable) != is_none(empty_pop_standalone)) {
-        vec_int_free(&v_vtable);
-        vec_int_free(&v_standalone);
-        vec_int_free(&empty_vtable);
-        vec_int_free(&empty_standalone);
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    /* Cleanup */
-    v_vtable.vt->free(&v_vtable);
-    vec_int_free(&v_standalone);
-    vec_int_free(&empty_vtable);
-    vec_int_free(&empty_standalone);
-    
+
+    /* Cleanup using VEC_FREE for macro, standalone for other */
+    VEC_FREE(int, v_macro);
+    vec_int_free(&v_fn);
+
     return THEFT_TRIAL_PASS;
 }
 
@@ -416,21 +585,38 @@ static VectorTest vector_tests[] = {
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 1 (vtable): Shared vtable instances (Vector)",
-        prop_shared_vtable,
+        "Property 13: insert/remove invariants",
+        prop_insert_remove,
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 2 (vtable): Vector vtable behavioral equivalence",
-        prop_vtable_behavioral_equivalence,
+        "Property 14: extend equals repeated push",
+        prop_extend_equals_push,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 15: reserve never loses elements",
+        prop_reserve_preserves_elements,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 16: clear resets length, vector remains usable",
+        prop_clear_then_reuse,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 17: Vector macro == function behavioral equivalence",
+        prop_macro_fn_equivalence,
         THEFT_BUILTIN_int64_t
     },
 };
 
 #define NUM_VECTOR_TESTS (sizeof(vector_tests) / sizeof(vector_tests[0]))
 
-int run_vector_tests(theft_seed seed) {
+int run_vector_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_VECTOR_TESTS;
     
     printf("\nVector Type Tests:\n");
     

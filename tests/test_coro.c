@@ -330,8 +330,10 @@ static CoroTest coro_tests[] = {
 
 #define NUM_CORO_TESTS (sizeof(coro_tests) / sizeof(coro_tests[0]))
 
-int run_coro_tests(theft_seed seed) {
+int run_coro_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_CORO_TESTS;
     
     printf("\nCoroutine Tests:\n");
     

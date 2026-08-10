@@ -7,6 +7,9 @@
  * - Property 6: Err round-trip
  * - Property 7: is_ok and is_err are inverses
  * - Property 8: unwrap_ok_or returns value or default
+ * - Property 9: Result macro == function behavioral equivalence
+ * - Property 10: map/map_err/and_then_result combinators
+ * - Property 11: expect_ok/try_ok behavior
  */
 
 #include <stdio.h>
@@ -125,108 +128,170 @@ static enum theft_trial_res prop_unwrap_ok_or(struct theft *t, void *arg1) {
 }
 
 /*============================================================================
- * Property 1 (vtable): Shared vtable instances (Result)
- * For any two Result_T_E instances, their vtable pointers shall be equal
+ * Property 9: Result macro == function behavioral equivalence
+ * For any Result, the RES_* macros produce identical results to the
+ * generated result_T_E_* standalone functions.
  *============================================================================*/
 
-static enum theft_trial_res prop_result_shared_vtable(struct theft *t, void *arg1) {
-    (void)t;
-    int64_t *val_ptr = (int64_t *)arg1;
-    int val = (int)(*val_ptr);
-    
-    /* Create multiple Result instances */
-    Result_int_int res1 = Ok(int, int, val);
-    Result_int_int res2 = Ok(int, int, val + 1);
-    Result_int_int res3 = Err(int, int, val);
-    
-    /* All vtable pointers should be equal (shared) */
-    if (res1.vt != res2.vt) {
-        return THEFT_TRIAL_FAIL;
-    }
-    if (res1.vt != res3.vt) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    /* Vtable should not be NULL */
-    if (res1.vt == NULL) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
-    return THEFT_TRIAL_PASS;
-}
-
-/*============================================================================
- * Property 8 (vtable): Result vtable behavioral equivalence
- * For any Result_T_E instance, vtable operations produce identical results to macros
- *============================================================================*/
-
-static enum theft_trial_res prop_result_vtable_equivalence(struct theft *t, void *arg1) {
+static enum theft_trial_res prop_result_macro_fn_equivalence(struct theft *t, void *arg1) {
     (void)t;
     int64_t *val_ptr = (int64_t *)arg1;
     int val = (int)(*val_ptr);
     int default_val = val + 1;
-    
+
     /* Test with Ok */
     Result_int_int ok_res = Ok(int, int, val);
-    
+
     /* is_ok equivalence */
-    if (is_ok(ok_res) != RES_IS_OK(ok_res)) {
+    if (RES_IS_OK(ok_res) != result_int_int_is_ok(&ok_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    if (is_ok(ok_res) != ok_res.vt->res_is_ok(&ok_res)) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* is_err equivalence */
-    if (is_err(ok_res) != RES_IS_ERR(ok_res)) {
+    if (RES_IS_ERR(ok_res) != result_int_int_is_err(&ok_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    if (is_err(ok_res) != ok_res.vt->res_is_err(&ok_res)) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* unwrap_ok equivalence */
-    if (unwrap_ok(ok_res) != RES_UNWRAP_OK(ok_res)) {
+    if (RES_UNWRAP_OK(ok_res) != result_int_int_unwrap_ok(&ok_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    if (unwrap_ok(ok_res) != ok_res.vt->res_unwrap_ok(&ok_res)) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* unwrap_ok_or equivalence */
-    if (unwrap_ok_or(ok_res, default_val) != RES_UNWRAP_OK_OR(ok_res, default_val)) {
+    if (RES_UNWRAP_OK_OR(ok_res, default_val) != result_int_int_unwrap_ok_or(&ok_res, default_val)) {
         return THEFT_TRIAL_FAIL;
     }
-    if (unwrap_ok_or(ok_res, default_val) != ok_res.vt->res_unwrap_ok_or(&ok_res, default_val)) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* Test with Err */
     Result_int_int err_res = Err(int, int, val);
-    
+
     /* is_ok equivalence */
-    if (is_ok(err_res) != RES_IS_OK(err_res)) {
+    if (RES_IS_OK(err_res) != result_int_int_is_ok(&err_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* is_err equivalence */
-    if (is_err(err_res) != RES_IS_ERR(err_res)) {
+    if (RES_IS_ERR(err_res) != result_int_int_is_err(&err_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    
+
     /* unwrap_err equivalence */
-    if (unwrap_err(err_res) != RES_UNWRAP_ERR(err_res)) {
+    if (RES_UNWRAP_ERR(err_res) != result_int_int_unwrap_err(&err_res)) {
         return THEFT_TRIAL_FAIL;
     }
-    if (unwrap_err(err_res) != err_res.vt->res_unwrap_err(&err_res)) {
-        return THEFT_TRIAL_FAIL;
-    }
-    
+
     /* unwrap_ok_or equivalence for Err */
-    if (unwrap_ok_or(err_res, default_val) != RES_UNWRAP_OK_OR(err_res, default_val)) {
+    if (RES_UNWRAP_OK_OR(err_res, default_val) != result_int_int_unwrap_ok_or(&err_res, default_val)) {
         return THEFT_TRIAL_FAIL;
     }
-    
+
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 10: map/map_err/and_then_result combinators
+ * RES_MAP transforms the Ok value, RES_MAP_ERR transforms the Err value,
+ * and_then_result chains a fallible transformation on the Ok value.
+ *============================================================================*/
+
+static int _res_double(int x) { return x * 2; }
+
+static int _res_negate(int e) { return -e; }
+
+static Result_int_int _res_half_if_even(int x) {
+    if (x % 2 == 0) return Ok(int, int, x / 2);
+    return Err(int, int, -100);
+}
+
+static enum theft_trial_res prop_result_combinators(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr % 100000);  /* Keep doubling in range */
+
+    Result_int_int ok_res = Ok(int, int, val);
+    Result_int_int err_res = Err(int, int, val);
+
+    /* RES_MAP transforms the Ok value */
+    Result_int_int mapped = RES_MAP(ok_res, int, int, _res_double);
+    if (!is_ok(mapped) || unwrap_ok(mapped) != val * 2) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* map_result passes Err through unchanged */
+    Result_int_int mapped_err = map_result(err_res, int, int, _res_double);
+    if (!is_err(mapped_err) || unwrap_err(mapped_err) != val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* RES_MAP_ERR transforms the Err value */
+    Result_int_int err_mapped = RES_MAP_ERR(err_res, int, int, _res_negate);
+    if (!is_err(err_mapped) || unwrap_err(err_mapped) != -val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* map_err passes Ok through unchanged */
+    Result_int_int ok_kept = map_err(ok_res, int, int, _res_negate);
+    if (!is_ok(ok_kept) || unwrap_ok(ok_kept) != val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* and_then_result chains the fallible transformation on Ok */
+    Result_int_int chained = and_then_result(ok_res, int, int, _res_half_if_even);
+    if (val % 2 == 0) {
+        if (!is_ok(chained) || unwrap_ok(chained) != val / 2) {
+            return THEFT_TRIAL_FAIL;
+        }
+    } else {
+        if (!is_err(chained) || unwrap_err(chained) != -100) {
+            return THEFT_TRIAL_FAIL;
+        }
+    }
+
+    /* and_then_result propagates Err without calling fn */
+    Result_int_int chained_err = and_then_result(err_res, int, int, _res_half_if_even);
+    if (!is_err(chained_err) || unwrap_err(chained_err) != val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    return THEFT_TRIAL_PASS;
+}
+
+/*============================================================================
+ * Property 11: expect_ok/try_ok behavior
+ * expect_ok on Ok returns the value, try_ok unwraps Ok and early-returns
+ * the whole Err Result from the enclosing function.
+ *============================================================================*/
+
+/* Helper for try_ok: enclosing function must return the same Result type */
+static Result_int_int _res_try_double(Result_int_int in) {
+    int v = try_ok(in);  /* Returns the Err to the caller on Err */
+    return Ok(int, int, v * 2);
+}
+
+static enum theft_trial_res prop_result_expect_try(struct theft *t, void *arg1) {
+    (void)t;
+    int64_t *val_ptr = (int64_t *)arg1;
+    int val = (int)(*val_ptr % 100000);  /* Keep doubling in range */
+
+    Result_int_int ok_res = Ok(int, int, val);
+
+    /* expect_ok on Ok returns the contained value (no panic) */
+    if (expect_ok(ok_res, "expect_ok on Ok must not panic") != val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* try_ok unwraps an Ok and lets the helper continue */
+    Result_int_int doubled = _res_try_double(Ok(int, int, val));
+    if (!is_ok(doubled) || unwrap_ok(doubled) != val * 2) {
+        return THEFT_TRIAL_FAIL;
+    }
+
+    /* try_ok early-returns the Err from the helper */
+    Result_int_int propagated = _res_try_double(Err(int, int, val));
+    if (!is_err(propagated) || unwrap_err(propagated) != val) {
+        return THEFT_TRIAL_FAIL;
+    }
+
     return THEFT_TRIAL_PASS;
 }
 
@@ -265,21 +330,28 @@ static ResultTest result_tests[] = {
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 1 (vtable): Shared vtable instances (Result)",
-        prop_result_shared_vtable,
+        "Property 9: Result macro == function behavioral equivalence",
+        prop_result_macro_fn_equivalence,
         THEFT_BUILTIN_int64_t
     },
     {
-        "Property 8 (vtable): Result vtable behavioral equivalence",
-        prop_result_vtable_equivalence,
+        "Property 10: map/map_err/and_then_result combinators",
+        prop_result_combinators,
+        THEFT_BUILTIN_int64_t
+    },
+    {
+        "Property 11: expect_ok/try_ok behavior",
+        prop_result_expect_try,
         THEFT_BUILTIN_int64_t
     },
 };
 
 #define NUM_RESULT_TESTS (sizeof(result_tests) / sizeof(result_tests[0]))
 
-int run_result_tests(theft_seed seed) {
+int run_result_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_RESULT_TESTS;
     
     printf("\nResult Type Tests:\n");
     

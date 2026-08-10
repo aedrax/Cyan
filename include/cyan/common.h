@@ -113,6 +113,19 @@
 #define CYAN_STRINGIFY_(x) #x
 #define CYAN_STRINGIFY(x) CYAN_STRINGIFY_(x)
 
+/**
+ * @brief Mark a generated function as possibly unused
+ *
+ * The *_DEFINE macros generate full function families; callers rarely use
+ * every one, so generated functions are tagged to keep -Wunused-function
+ * quiet in user translation units.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define CYAN_UNUSED __attribute__((unused))
+#else
+#define CYAN_UNUSED
+#endif
+
 /*============================================================================
  * Boolean Type (pre-C23 compatibility)
  *============================================================================
@@ -147,6 +160,24 @@ typedef _Bool bool;
  * These macros allow users to configure library behavior via preprocessor
  * defines before including headers.
  */
+
+/**
+ * @brief Allocation hooks
+ * Override CYAN_MALLOC / CYAN_REALLOC / CYAN_FREE before including headers
+ * to route all library allocations through a custom allocator. All three
+ * must be overridden together with the usual malloc/realloc/free semantics.
+ */
+#ifndef CYAN_MALLOC
+#define CYAN_MALLOC(size) malloc(size)
+#endif
+
+#ifndef CYAN_REALLOC
+#define CYAN_REALLOC(ptr, size) realloc((ptr), (size))
+#endif
+
+#ifndef CYAN_FREE
+#define CYAN_FREE(ptr) free(ptr)
+#endif
 
 /**
  * @brief Default initial capacity for dynamic collections
@@ -184,9 +215,16 @@ _Static_assert(CYAN_DEFAULT_CAPACITY > 0,
  *============================================================================*/
 
 #define CYAN_VERSION_MAJOR 0
-#define CYAN_VERSION_MINOR 1
+#define CYAN_VERSION_MINOR 2
 #define CYAN_VERSION_PATCH 0
-#define CYAN_VERSION_STRING "0.1.0"
+#define CYAN_VERSION_STRING "0.2.0"
+
+/** @brief Version as single integer for comparison: (major * 10000 + minor * 100 + patch) */
+#define CYAN_VERSION ((CYAN_VERSION_MAJOR * 10000) + (CYAN_VERSION_MINOR * 100) + CYAN_VERSION_PATCH)
+
+/** @brief Check if Cyan version is at least the specified version */
+#define CYAN_VERSION_AT_LEAST(major, minor, patch) \
+    (CYAN_VERSION >= ((major) * 10000 + (minor) * 100 + (patch)))
 
 /*============================================================================
  * Primitive Type Aliases
@@ -337,19 +375,5 @@ typedef _Float128 f128;
 #warning "128-bit float type (_Float128) not available on this platform"
 #endif
 #endif
-
-/*----------------------------------------------------------------------------
- * Special Types
- *----------------------------------------------------------------------------*/
-
-/**
- * @brief Type-erased pointer type
- * Use as any* for generic/opaque data pointers
- * 
- * Example:
- *   any* ptr = some_data;
- *   int* typed_ptr = (int*)ptr;
- */
-typedef void any;
 
 #endif /* CYAN_COMMON_H */

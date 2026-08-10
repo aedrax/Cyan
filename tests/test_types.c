@@ -312,8 +312,10 @@ static TypesTest types_tests[] = {
 
 #define NUM_TYPES_TESTS (sizeof(types_tests) / sizeof(types_tests[0]))
 
-int run_types_tests(theft_seed seed) {
+int run_types_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
+    
+    *num_tests = (int)NUM_TYPES_TESTS;
     
     printf("\nPrimitive Type Alias Tests:\n");
     

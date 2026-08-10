@@ -456,9 +456,10 @@ static enum theft_trial_res prop_int_sign_extend(struct theft *t, void *arg1) {
 
 #define MIN_TEST_TRIALS 100
 
-int run_bitint_tests(theft_seed seed) {
+int run_bitint_tests(theft_seed seed, int *num_tests) {
     int failures = 0;
-    
+    int num_run = 0;
+
     printf("\nBitint Type Tests:\n");
     
     /* Property 1: Unsigned masking invariant */
@@ -475,6 +476,7 @@ int run_bitint_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 2: Signed integer sign-extension */
@@ -491,6 +493,7 @@ int run_bitint_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
     /* Property 3: Arithmetic preserves bit width */
@@ -510,7 +513,9 @@ int run_bitint_tests(theft_seed seed) {
         const char *status = (res == THEFT_RUN_PASS) ? "\033[32mPASS\033[0m" : "\033[31mFAIL\033[0m";
         printf("  [%s] %s\n", status, config.name);
         if (res != THEFT_RUN_PASS) failures++;
+        num_run++;
     }
     
+    *num_tests = num_run;
     return failures;
 }
