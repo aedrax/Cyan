@@ -1,359 +1,117 @@
-# Cyan - Modern C11 Header Library
+<div align="center">
+
+<img src="assets/logo.svg" alt="cyan.h" width="300">
+
+### Rust-grade ergonomics for C11, in a header-only include
+
+Options and Results instead of sentinels. Panics instead of undefined
+behavior. Vectors, slices, strings, hash maps and sets that check their
+bounds. `defer`, smart pointers, pattern matching — and Go-style CSP with
+coroutines and channels.
+
+[![version](https://img.shields.io/badge/version-0.3.0-00bcd4?style=flat-square)](#changelog)
+[![standard](https://img.shields.io/badge/C11-GNU%20extensions-0891b2?style=flat-square)](#requirements)
+[![header-only](https://img.shields.io/badge/header--only-yes-22d3ee?style=flat-square)](#installation)
+[![tests](https://img.shields.io/badge/tests-141%2F141-brightgreen?style=flat-square)](#building-and-testing)
+[![sanitizers](https://img.shields.io/badge/ASan%2FUBSan-clean-brightgreen?style=flat-square)](#building-and-testing)
+[![platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macOS-64748b?style=flat-square)](#requirements)
+[![license](https://img.shields.io/badge/license-MIT-64748b?style=flat-square)](#license)
+
 > Pronounced "See-yan" because I'm a monster
 
-A header-only C11 library that brings modern programming paradigms to C, including Option/Result types, functional primitives, smart pointers, coroutines, channels, and more.
+</div>
 
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Primitive Type Aliases** | Concise, predictable-size type names (i32, u64, f32, etc.) |
-| **Option Type** | Explicit nullable value handling |
-| **Result Type** | Explicit error handling without errno |
-| **Vector** | Generic dynamic arrays with bounds checking |
-| **Slice** | Safe array views with bounds information |
-| **HashMap** | Type-safe hash maps with O(1) lookups |
-| **String** | Dynamic strings with safe operations |
-| **Functional Primitives** | map, filter, reduce, foreach |
-| **Smart Pointers** | Unique and shared pointers with automatic cleanup |
-| **Defer** | Scope-based resource cleanup (RAII-style) |
-| **Coroutines** | Stackful cooperative multitasking |
-| **Channels** | CSP-style communication primitives |
-| **Pattern Matching** | Ergonomic Option/Result handling |
-| **Serialization** | S-expression serialization with a full parser (atoms, strings, symbols, nested lists) |
-| **Custom Bit-Width Integers** | Zig-inspired integers with arbitrary bit widths (u6, i12, etc.) |
-| **Bitset** | Fixed-size bit collections for efficient flag management |
-
-## Quick Start
-
-### Installation
-
-Copy the `include/cyan/` directory to your project and include the headers:
+---
 
 ```c
-#include <cyan/cyan.h>  // Include everything
-// Or include individual headers:
+#include <cyan/cyan.h>
+
+RESULT_DEFINE(i32, ParseError);
+
+// `?`-style early return: on Err, the whole Result propagates to the caller
+Result_i32_ParseError parse_port(const char *s) {
+    i32 port = try_ok(parse_int(s, NULL));
+    if (port < 1 || port > 65535)
+        return Err(i32, ParseError, "port out of range");
+    return Ok(i32, ParseError, port);
+}
+
+int main(void) {
+    match_result(parse_port("8080"), i32, ParseError, port, err,
+        { printf("listening on %d\n", port); },
+        { fprintf(stderr, "bad config: %s\n", err); }
+    );
+}
+```
+
+## Why Cyan
+
+- **Absence and failure are types, not conventions.** `Option_T` and
+  `Result_T_E` make "no value" and "error" impossible to ignore silently —
+  with `unwrap`, `expect`, `and_then`, `ok_or`, and `try_ok`/`try_some`
+  early returns.
+- **Plain structs, zero machinery.** No vtables, no hidden pointers, no
+  runtime. An `Option_i32` is a `bool` and an `i32`. Every generated
+  function is `static inline`.
+- **Macros you can trust.** Every convenience macro evaluates each argument
+  exactly once; type-first naming (`VEC_PUSH(i32, v, 42)`) mirrors the
+  constructors (`Some(i32, 42)`).
+- **Checked by construction.** Bounds-checked access returns Options;
+  capacity math is overflow-guarded; allocation failures panic instead of
+  corrupting. 141 property-based tests (theft), clean under ASan/UBSan.
+- **CSP that composes.** Channels called inside coroutines yield instead of
+  failing — `coro_run` schedules them and detects deadlock.
+- **Yours to configure.** Custom panic handler, custom allocator hooks,
+  `CYAN_NO_SHORT_NAMES` if `map`/`filter`/`unwrap` would collide.
+
+## Installation
+
+Copy `include/cyan/` into your project. That's it — header-only.
+
+```c
+#include <cyan/cyan.h>     // everything
+// or pick modules:
 #include <cyan/option.h>
 #include <cyan/vector.h>
 ```
 
----
+Compile with GCC or Clang (`-std=gnu11`, or `-std=c11` — the GNU extensions
+used are accepted by both). On macOS add `-D_XOPEN_SOURCE=700` if you use
+coroutines (see [Requirements](#requirements)).
 
-## Primitive Type Aliases
-
-Concise type names with predictable sizes, inspired by Rust and Zig.
-
-```c
-#include <cyan/common.h>
-
-// Fixed-width signed integers
-i8  a = 127;           // int8_t
-i16 b = 32767;         // int16_t
-i32 c = 2147483647;    // int32_t
-i64 d = 9223372036854775807LL;  // int64_t
-
-// Fixed-width unsigned integers
-u8  e = 255;           // uint8_t
-u16 f = 65535;         // uint16_t
-u32 g = 4294967295U;   // uint32_t
-u64 h = 18446744073709551615ULL;  // uint64_t
-
-// Pointer-sized integers
-usize len = sizeof(array) / sizeof(array[0]);  // size_t compatible
-isize offset = -100;   // signed pointer-sized
-
-// Floating-point
-f32 pi_f = 3.14159f;   // float
-f64 pi_d = 3.14159265358979;  // double
-```
-
-For type-erased pointers, use plain `void *` (the `any` alias was removed in 0.2.0).
-
-**Available Types:**
-
-| Category | Types |
-|----------|-------|
-| Signed integers | `i8`, `i16`, `i32`, `i64`, `i128`* |
-| Unsigned integers | `u8`, `u16`, `u32`, `u64`, `u128`* |
-| Pointer-sized | `isize`, `usize` |
-| Floating-point | `f16`*, `f32`, `f64`, `f80`*, `f128`* |
-| Special | `bool` |
-
-*Platform-dependent. Check `CYAN_HAS_INT128`, `CYAN_HAS_FLOAT16`, `CYAN_HAS_FLOAT80`, `CYAN_HAS_FLOAT128` macros.
-
----
-
-## Custom Bit-Width Integers
-
-Zig-inspired integer types with arbitrary bit widths (1-64 bits). Define custom unsigned integers with `UINT_DEFINE(N)` and signed integers with `INT_DEFINE(N)`.
+## Sixty-second tour
 
 ```c
-#include <cyan/bitint.h>
+// Options and Results ------------------------------------------------
+Option_i32 found = vec_i32_find(&v, wanted);        // search returns Option
+i32 x = unwrap_or(found, -1);                       // never a stray NULL
 
-// Define custom bit-width types
-UINT_DEFINE(6);   // u6: 6-bit unsigned (0-63)
-UINT_DEFINE(12);  // u12: 12-bit unsigned (0-4095)
-INT_DEFINE(6);    // i6: 6-bit signed (-32 to 31)
-INT_DEFINE(12);   // i12: 12-bit signed (-2048 to 2047)
+// Collections --------------------------------------------------------
+Vec_i32 v = vec_i32_new();                          // growable, bounds-checked
+VEC_PUSH(i32, v, 42);
+VEC_FOREACH(i32, v, it) printf("%d ", *it);
 
-i32 main(void) {
-    // Unsigned integers - values are masked to fit
-    u6 val = u6_new(42);           // 42
-    u6 overflow = u6_new(100);     // 36 (100 & 0x3F)
-    printf("Value: %u\n", u6_get(&val));
-    
-    // Arithmetic operations (results masked to N bits)
-    u6 a = u6_new(30);
-    u6 b = u6_new(40);
-    u6 sum = u6_add(a, b);         // 6 (70 wraps at 64)
-    
-    // Bitwise operations
-    u6 masked = u6_and(a, b);
-    u6 shifted = u6_shl(a, 2);
-    
-    // Signed integers with sign extension
-    i6 pos = i6_new(20);
-    i6 neg = i6_new(-15);
-    i6 diff = i6_sub(pos, neg);    // Wraps in 6-bit signed range
-    i6 negated = i6_neg(pos);      // -20
-    
-    // Min/max values
-    u6 max_u6 = u6_max();          // 63
-    i6 min_i6 = i6_min();          // -32
-    
-    return 0;
-}
+HashMap_str_i32 counts = hashmap_str_i32_new();     // content-hashed str keys
+hashmap_str_i32_insert(&counts, "apple", 1);        // key is copied & owned
+
+// Strings ------------------------------------------------------------
+String s = string_from("a,b,c");
+Slice_char rest = string_as_slice(&s), part;
+while (string_split_next(&rest, ',', &part))        // zero-copy split
+    printf("%.*s\n", (int)part.len, part.data);
+
+// Cleanup ------------------------------------------------------------
+defer({ close_thing(&thing); });                    // runs on scope exit
+string_auto(tmp, string_from("freed automatically"));
 ```
 
-**Unsigned Integer API (UINT_DEFINE):**
+Every feature has a full reference below and a runnable program in
+[`examples/`](#examples).
 
-| Function | Description |
-|----------|-------------|
-| `uN_new(value)` | Create N-bit unsigned integer (value masked to N bits) |
-| `uN_get(ptr)` | Get value as backing type |
-| `uN_raw(ptr)` | Get raw backing value |
-| `uN_add(a, b)` | Add two values (result masked) |
-| `uN_sub(a, b)` | Subtract two values (result masked) |
-| `uN_mul(a, b)` | Multiply two values (result masked) |
-| `uN_and(a, b)` | Bitwise AND |
-| `uN_or(a, b)` | Bitwise OR |
-| `uN_xor(a, b)` | Bitwise XOR |
-| `uN_not(a)` | Bitwise NOT (masked to N bits) |
-| `uN_shl(a, shift)` | Left shift (result masked) |
-| `uN_shr(a, shift)` | Right shift |
-| `uN_eq(a, b)` | Equality comparison |
-| `uN_lt(a, b)` | Less than comparison |
-| `uN_le(a, b)` | Less than or equal comparison |
-| `uN_max()` | Maximum value (2^N - 1) |
-| `uN_min()` | Minimum value (0) |
+## Module reference
 
-**Signed Integer API (INT_DEFINE):**
-
-| Function | Description |
-|----------|-------------|
-| `iN_new(value)` | Create N-bit signed integer (sign-extended) |
-| `iN_get(ptr)` | Get sign-extended value |
-| `iN_add(a, b)` | Add two values |
-| `iN_sub(a, b)` | Subtract two values |
-| `iN_mul(a, b)` | Multiply two values |
-| `iN_neg(a)` | Negate value |
-| `iN_eq(a, b)` | Equality comparison |
-| `iN_lt(a, b)` | Less than comparison |
-| `iN_le(a, b)` | Less than or equal comparison |
-| `iN_max()` | Maximum value (2^(N-1) - 1) |
-| `iN_min()` | Minimum value (-2^(N-1)) |
-
-**Backing Type Selection:**
-
-| Bit Width | Unsigned Backing | Signed Backing |
-|-----------|------------------|----------------|
-| 1-8       | u8               | i8             |
-| 9-16      | u16              | i16            |
-| 17-32     | u32              | i32            |
-| 33-64     | u64              | i64            |
-
----
-
-## Bitset
-
-Fixed-size bit collections for efficient flag management. Define bitsets with `BITSET_DEFINE(N)` for N bits (1-64).
-
-```c
-#include <cyan/bitset.h>
-
-BITSET_DEFINE(8);   // Bitset_8: 8-bit bitset
-BITSET_DEFINE(16);  // Bitset_16: 16-bit bitset
-
-i32 main(void) {
-    // Create empty bitset
-    Bitset_8 bs = bitset_8_new();
-    
-    // Set, clear, toggle bits
-    bitset_8_set(&bs, 0);      // Set bit 0
-    bitset_8_set(&bs, 3);      // Set bit 3
-    bitset_8_toggle(&bs, 3);   // Toggle bit 3 (now clear)
-    bitset_8_clear(&bs, 0);    // Clear bit 0
-    
-    // Query bits
-    bool is_set = bitset_8_get(&bs, 0);  // false
-    
-    // Create from raw value
-    Bitset_8 set1 = bitset_8_from_raw(0b00001111);  // Bits 0-3
-    Bitset_8 set2 = bitset_8_from_raw(0b00111100);  // Bits 2-5
-    
-    // Set operations
-    Bitset_8 union_set = bitset_8_union(&set1, &set2);      // OR
-    Bitset_8 intersect = bitset_8_intersect(&set1, &set2);  // AND
-    Bitset_8 diff = bitset_8_diff(&set1, &set2);            // set1 & ~set2
-    Bitset_8 comp = bitset_8_complement(&set1);             // ~set1 (masked)
-    
-    // Utility functions
-    u8 count = bitset_8_count(&bs);     // Number of set bits
-    bool all = bitset_8_all(&bs);       // All bits set?
-    bool any = bitset_8_any(&bs);       // Any bit set?
-    bool none = bitset_8_none(&bs);     // No bits set?
-    bool equal = bitset_8_eq(&set1, &set2);  // Equality check
-    
-    return 0;
-}
-```
-
-**Bitset API:**
-
-| Function | Description |
-|----------|-------------|
-| `bitset_N_new()` | Create bitset with all bits cleared |
-| `bitset_N_from_raw(value)` | Create bitset from raw integer value |
-| `bitset_N_set(bs, index)` | Set bit at index (panics if out of bounds) |
-| `bitset_N_clear(bs, index)` | Clear bit at index |
-| `bitset_N_get(bs, index)` | Get bit at index (returns bool) |
-| `bitset_N_toggle(bs, index)` | Toggle bit at index |
-| `bitset_N_union(a, b)` | Union of two bitsets (OR) |
-| `bitset_N_intersect(a, b)` | Intersection of two bitsets (AND) |
-| `bitset_N_diff(a, b)` | Difference (a AND NOT b) |
-| `bitset_N_complement(bs)` | Complement (NOT, masked to N bits) |
-| `bitset_N_eq(a, b)` | Check equality |
-| `bitset_N_count(bs)` | Count set bits (popcount) |
-| `bitset_N_all(bs)` | Check if all N bits are set |
-| `bitset_N_any(bs)` | Check if any bit is set |
-| `bitset_N_none(bs)` | Check if no bits are set |
-
-**Convenience Macros:**
-
-| Macro | Description |
-|-------|-------------|
-| `BS_SET(N, bs, i)` | Set bit at index |
-| `BS_CLEAR(N, bs, i)` | Clear bit at index |
-| `BS_GET(N, bs, i)` | Get bit at index |
-| `BS_TOGGLE(N, bs, i)` | Toggle bit at index |
-| `BS_UNION(N, a, b)` | Union of two bitsets |
-| `BS_INTERSECT(N, a, b)` | Intersection of two bitsets |
-| `BS_DIFF(N, a, b)` | Difference of two bitsets |
-| `BS_COMPLEMENT(N, bs)` | Complement of bitset |
-| `BS_EQ(N, a, b)` | Check equality |
-| `BS_COUNT(N, bs)` | Count set bits |
-| `BS_ALL(N, bs)` | Check if all bits set |
-| `BS_ANY(N, bs)` | Check if any bit set |
-| `BS_NONE(N, bs)` | Check if no bits set |
-
-### Named Flags
-
-Define named flags with `FLAGS_DEFINE` for type-safe flag manipulation:
-
-```c
-#include <cyan/bitset.h>
-
-// Define named flags
-FLAGS_DEFINE(Permissions, READ, WRITE, EXECUTE, HIDDEN);
-// Creates: Permissions_READ = 0, Permissions_WRITE = 1, etc.
-// Creates: Permissions_COUNT = 4
-
-BITSET_DEFINE(4);  // Bitset for 4 flags
-
-i32 main(void) {
-    Bitset_4 perms = bitset_4_new();
-    
-    // Set flags using names
-    FLAGS_SET(4, perms, Permissions_READ);
-    FLAGS_SET(4, perms, Permissions_WRITE);
-    
-    // Check flags
-    if (FLAGS_HAS(4, perms, Permissions_READ)) {
-        printf("Has read permission\n");
-    }
-    
-    // Clear flags
-    FLAGS_CLEAR(4, perms, Permissions_WRITE);
-    
-    return 0;
-}
-```
-
-**Named Flags API:**
-
-| Macro | Description |
-|-------|-------------|
-| `FLAGS_DEFINE(Name, ...)` | Define named flags with sequential bit positions |
-| `FLAGS_SET(N, bs, flag)` | Set the specified flag |
-| `FLAGS_CLEAR(N, bs, flag)` | Clear the specified flag |
-| `FLAGS_HAS(N, bs, flag)` | Check if flag is set |
-
----
-
-## Panic Handler
-
-The panic handler is invoked for unrecoverable errors in the Cyan library. When a panic occurs, the default behavior is to print diagnostic information (file, line number, and error message) to stderr and then abort the program.
-
-**Default Behavior:**
-
-```c
-// Default panic output format:
-// PANIC at filename.c:42: error message
-```
-
-The default `CYAN_PANIC` macro prints the file name, line number, and a descriptive message before calling `abort()`. This provides clear debugging information when something goes wrong.
-
-### Panic Trigger Scenarios
-
-Panics are triggered in the following situations:
-
-| Scenario | Description |
-|----------|-------------|
-| `unwrap()` on None | Attempting to extract a value from an empty Option |
-| `unwrap_ok()` on Err | Attempting to extract a success value from an error Result |
-| `unwrap_err()` on Ok | Attempting to extract an error value from a success Result |
-| Memory allocation failure | When `malloc()` or `realloc()` returns NULL in collection operations |
-| Resuming finished coroutine | Attempting to resume a coroutine that has already completed |
-
-### Custom Panic Handler
-
-You can override the default panic behavior by defining `CYAN_PANIC` before including any Cyan headers:
-
-```c
-// Define custom panic handler BEFORE including Cyan headers
-#define CYAN_PANIC(msg) do { \
-    fprintf(stderr, "[FATAL] %s:%d - %s\n", __FILE__, __LINE__, msg); \
-    /* Add custom logging, cleanup, or crash reporting here */ \
-    abort(); \
-} while(0)
-
-#include <cyan/cyan.h>
-
-// Now all panics will use your custom handler
-```
-
-**Important:** The custom handler must be defined before any Cyan header is included, as the panic macro is checked with `#ifndef` and only defined if not already present.
-
-### Panic API
-
-| Macro | Description |
-|-------|-------------|
-| `CYAN_PANIC(msg)` | Trigger a panic with the given message. Prints file, line, and message to stderr, then calls `abort()`. Can be overridden by user. |
-| `CYAN_PANIC_EXPR(msg, dummy)` | Internal helper for panics in expression contexts. Used where a value must be returned (e.g., ternary operators). The dummy value satisfies type requirements but is never returned. |
-
----
-
-## Option Type
+<details>
+<summary><b>Option</b> — explicit nullable values with combinators</summary>
 
 Explicit nullable value handling that makes absence explicit in code.
 
@@ -459,7 +217,10 @@ The short names above are default-on aliases for these uppercase macros, which a
 
 ---
 
-## Result Type
+</details>
+
+<details>
+<summary><b>Result</b> — explicit error handling with <code>try_ok</code> early returns</summary>
 
 Explicit error handling without relying on errno or error codes.
 
@@ -558,7 +319,61 @@ The short names above are default-on aliases for these uppercase macros, which a
 
 ---
 
-## Vector (Dynamic Array)
+</details>
+
+<details>
+<summary><b>Pattern Matching</b> — ergonomic <code>match</code> over Option/Result</summary>
+
+Ergonomic handling of Option and Result types.
+
+```c
+#include <cyan/match.h>
+
+OPTION_DEFINE(i32);
+RESULT_DEFINE(i32, const_charp);
+
+i32 main(void) {
+    // === Option Matching (statement form) ===
+    Option_i32 opt = Some(i32, 42);
+    
+    match_option(opt, i32, val,
+        { printf("Got value: %d\n", val); },
+        { printf("No value\n"); }
+    );
+    
+    // === Option Matching (expression form) ===
+    i32 doubled = match_option_expr(opt, i32, i32, v, v * 2, 0);
+    
+    // === Result Matching (statement form) ===
+    Result_i32_const_charp res = Ok(i32, const_charp, 100);
+    
+    match_result(res, i32, const_charp, val, e,
+        { printf("Success: %d\n", val); },
+        { printf("Error: %s\n", e); }
+    );
+    
+    // === Result Matching (expression form) ===
+    i32 value = match_result_expr(res, i32, const_charp, i32, v, e, v * 2, -1);
+    
+    return 0;
+}
+```
+
+**Pattern Matching API:**
+
+| Macro | Description |
+|-------|-------------|
+| `match_option(opt, T, var, some_branch, none_branch)` | Match Option (statement) |
+| `match_option_expr(opt, T, T_out, var, some_expr, none_expr)` | Match Option (expression) |
+| `match_result(res, T, E, ok_var, err_var, ok_branch, err_branch)` | Match Result (statement) |
+| `match_result_expr(res, T, E, T_out, ok_var, err_var, ok_expr, err_expr)` | Match Result (expression) |
+
+---
+
+</details>
+
+<details>
+<summary><b>Vector</b> — growable arrays: push/pop/insert/remove, find, sort, iterate</summary>
 
 Generic dynamic arrays with automatic growth and bounds-checked access.
 
@@ -653,7 +468,34 @@ Macros take the element type first, mirroring `Some(T, val)`:
 
 ---
 
-## Slice (Array Views)
+### New in 0.3.0: search, sort, iteration
+
+```c
+static bool over_9000(i32 x) { return x > 9000; }
+static int cmp_i32(const void *a, const void *b) {
+    return *(const i32 *)a - *(const i32 *)b;
+}
+
+Option_size_t at = vec_i32_find(&v, over_9000);   // index of first match
+bool any        = vec_i32_contains(&v, over_9000);
+vec_i32_sort(&v, cmp_i32);                        // qsort-style comparator
+
+VEC_FOREACH(i32, v, it) {                         // it is an i32*
+    printf("%d\n", *it);                          // break/continue work normally
+}
+```
+
+| Macro | Description |
+|-------|-------------|
+| `VEC_FIND(T, v, pred)` | First index satisfying pred, as `Option_size_t` |
+| `VEC_CONTAINS(T, v, pred)` | Whether any element satisfies pred |
+| `VEC_SORT(T, v, cmp)` | In-place sort (qsort-style comparator) |
+| `VEC_FOREACH(T, v, it)` | Pointer-iterator loop over the elements |
+
+</details>
+
+<details>
+<summary><b>Slice</b> — non-owning bounds-checked views</summary>
 
 Non-owning views into contiguous sequences with bounds information.
 
@@ -707,125 +549,10 @@ i32 main(void) {
 
 ---
 
-## HashMap
+</details>
 
-Type-safe hash maps with O(1) average lookups using FNV-1a hashing.
-
-```c
-#include <cyan/hashmap.h>
-
-OPTION_DEFINE(i32);
-HASHMAP_DEFINE(i32, i32);      // HashMap_i32_i32
-HASHMAP_ITER_DEFINE(i32, i32); // Iterator support
-
-i32 main(void) {
-    HashMap_i32_i32 m = hashmap_i32_i32_new();
-    
-    // Insert key-value pairs
-    hashmap_i32_i32_insert(&m, 1, 100);
-    hashmap_i32_i32_insert(&m, 2, 200);
-    hashmap_i32_i32_insert(&m, 3, 300);
-    
-    // Lookup (returns Option)
-    Option_i32 val = hashmap_i32_i32_get(&m, 2);
-    if (is_some(val)) {
-        printf("Key 2 -> %d\n", unwrap(val));
-    }
-    
-    // Check existence
-    if (hashmap_i32_i32_contains(&m, 1)) {
-        printf("Key 1 exists\n");
-    }
-    
-    // Remove entry
-    Option_i32 removed = hashmap_i32_i32_remove(&m, 1);
-    
-    // Iterate over entries
-    HashMapIter_i32_i32 it = hashmap_i32_i32_iter(&m);
-    Option_MapPair_i32_i32 pair;
-    while ((pair = hashmap_i32_i32_iter_next(&it)).has_value) {
-        printf("%d -> %d\n", pair.value.key, pair.value.value);
-    }
-    
-    printf("Size: %zu\n", hashmap_i32_i32_len(&m));
-    
-    hashmap_i32_i32_free(&m);
-    return 0;
-}
-```
-
-**HashMap API:**
-
-| Function | Description |
-|----------|-------------|
-| `hashmap_K_V_new()` | Create empty map |
-| `hashmap_K_V_with_capacity(cap)` | Create map with initial capacity |
-| `hashmap_K_V_insert(m, key, value)` | Insert or update entry |
-| `hashmap_K_V_get(m, key)` | Get value as Option |
-| `hashmap_K_V_contains(m, key)` | Check if key exists |
-| `hashmap_K_V_remove(m, key)` | Remove entry, return value as Option |
-| `hashmap_K_V_len(m)` | Get number of entries |
-| `hashmap_K_V_iter(m)` | Create iterator |
-| `hashmap_K_V_iter_next(it)` | Get next key-value pair |
-| `hashmap_K_V_free(m)` | Free map memory |
-
-**Convenience Macros:**
-
-Macros take the key and value types first:
-
-| Macro | Description |
-|-------|-------------|
-| `MAP_INSERT(K, V, m, k, val)` | Insert or update entry |
-| `MAP_GET(K, V, m, k)` | Get value as Option |
-| `MAP_CONTAINS(K, V, m, k)` | Check if key exists |
-| `MAP_REMOVE(K, V, m, k)` | Remove entry, return value |
-| `MAP_LEN(K, V, m)` | Get number of entries |
-| `MAP_FREE(K, V, m)` | Free map memory |
-
-> **Warning:** `HASHMAP_DEFINE` hashes and compares the raw bytes of the key type. For pointer keys such as `char *`, that means the *pointer value* is hashed, not the pointed-to contents — two identical strings at different addresses are different keys. Use `HASHMAP_STR_DEFINE` for string keys.
-
-### String-Keyed HashMap (new in 0.2.0)
-
-`HASHMAP_STR_DEFINE(V)` defines `HashMap_str_V` with content-hashed `char *` keys:
-
-```c
-#include <cyan/hashmap.h>
-
-OPTION_DEFINE(i32);        // Required before HASHMAP_STR_DEFINE(i32)
-HASHMAP_STR_DEFINE(i32);   // HashMap_str_i32
-
-i32 main(void) {
-    HashMap_str_i32 ages = hashmap_str_i32_new();
-    
-    // insert COPIES the key — the map owns its copy
-    char name[] = "alice";
-    hashmap_str_i32_insert(&ages, name, 30);
-    name[0] = 'A';  // Safe: the map's key copy is unaffected
-    
-    // Lookup is by content, not by pointer
-    Option_i32 age = hashmap_str_i32_get(&ages, "alice");  // Some(30)
-    
-    if (hashmap_str_i32_contains(&ages, "alice")) {
-        printf("alice is %d\n", unwrap(age));
-    }
-    
-    // remove and free release the map's key copies
-    hashmap_str_i32_remove(&ages, "alice");
-    hashmap_str_i32_free(&ages);
-    return 0;
-}
-```
-
-**Key ownership rules:**
-- `hashmap_str_V_insert` copies the key string; the caller keeps ownership of the original.
-- `hashmap_str_V_remove` and `hashmap_str_V_free` free the map's key copies.
-- Keys are hashed and compared by content, so heap strings, stack buffers, and literals all work.
-
-**String-Keyed HashMap API:** `hashmap_str_V_new()`, `hashmap_str_V_insert(m, key, value)`, `hashmap_str_V_get(m, key)`, `hashmap_str_V_contains(m, key)`, `hashmap_str_V_remove(m, key)`, `hashmap_str_V_len(m)`, `hashmap_str_V_free(m)` — same shapes as the generic map.
-
----
-
-## String (Dynamic Strings)
+<details>
+<summary><b>String</b> — growable text: search, trim, split, compare</summary>
 
 Heap-allocated, growable strings with safe operations.
 
@@ -957,7 +684,200 @@ String is monomorphic, so its macros take no type argument:
 
 ---
 
-## Functional Primitives
+### New in 0.3.0: materializing split pieces
+
+`string_split_next` yields non-null-terminated `Slice_char` views. Turn one
+into an owned C string with `string_from_slice`, or compare in place with
+`string_slice_eq`:
+
+```c
+Slice_char rest = string_as_slice(&csv), part;
+while (string_split_next(&rest, ',', &part)) {
+    if (string_slice_eq(part, "skip")) continue;   // no allocation
+    String field = string_from_slice(part);        // owned + null-terminated
+    use(string_cstr(&field));
+    string_free(&field);
+}
+```
+
+</details>
+
+<details>
+<summary><b>HashMap</b> — open-addressing maps, string-keyed variant, iteration</summary>
+
+Type-safe hash maps with O(1) average lookups using FNV-1a hashing.
+
+```c
+#include <cyan/hashmap.h>
+
+OPTION_DEFINE(i32);
+HASHMAP_DEFINE(i32, i32);      // HashMap_i32_i32
+HASHMAP_ITER_DEFINE(i32, i32); // Iterator support
+
+i32 main(void) {
+    HashMap_i32_i32 m = hashmap_i32_i32_new();
+    
+    // Insert key-value pairs
+    hashmap_i32_i32_insert(&m, 1, 100);
+    hashmap_i32_i32_insert(&m, 2, 200);
+    hashmap_i32_i32_insert(&m, 3, 300);
+    
+    // Lookup (returns Option)
+    Option_i32 val = hashmap_i32_i32_get(&m, 2);
+    if (is_some(val)) {
+        printf("Key 2 -> %d\n", unwrap(val));
+    }
+    
+    // Check existence
+    if (hashmap_i32_i32_contains(&m, 1)) {
+        printf("Key 1 exists\n");
+    }
+    
+    // Remove entry
+    Option_i32 removed = hashmap_i32_i32_remove(&m, 1);
+    
+    // Iterate over entries
+    HashMapIter_i32_i32 it = hashmap_i32_i32_iter(&m);
+    Option_MapPair_i32_i32 pair;
+    while ((pair = hashmap_i32_i32_iter_next(&it)).has_value) {
+        printf("%d -> %d\n", pair.value.key, pair.value.value);
+    }
+    
+    printf("Size: %zu\n", hashmap_i32_i32_len(&m));
+    
+    hashmap_i32_i32_free(&m);
+    return 0;
+}
+```
+
+**HashMap API:**
+
+| Function | Description |
+|----------|-------------|
+| `hashmap_K_V_new()` | Create empty map |
+| `hashmap_K_V_with_capacity(cap)` | Create map with initial capacity |
+| `hashmap_K_V_insert(m, key, value)` | Insert or update entry |
+| `hashmap_K_V_get(m, key)` | Get value as Option |
+| `hashmap_K_V_contains(m, key)` | Check if key exists |
+| `hashmap_K_V_remove(m, key)` | Remove entry, return value as Option |
+| `hashmap_K_V_len(m)` | Get number of entries |
+| `hashmap_K_V_iter(m)` | Create iterator |
+| `hashmap_K_V_iter_next(it)` | Get next key-value pair |
+| `hashmap_K_V_free(m)` | Free map memory |
+
+**Convenience Macros:**
+
+Macros take the key and value types first:
+
+| Macro | Description |
+|-------|-------------|
+| `MAP_INSERT(K, V, m, k, val)` | Insert or update entry |
+| `MAP_GET(K, V, m, k)` | Get value as Option |
+| `MAP_CONTAINS(K, V, m, k)` | Check if key exists |
+| `MAP_REMOVE(K, V, m, k)` | Remove entry, return value |
+| `MAP_LEN(K, V, m)` | Get number of entries |
+| `MAP_FREE(K, V, m)` | Free map memory |
+
+> **Warning:** `HASHMAP_DEFINE` hashes and compares the raw bytes of the key type. For pointer keys such as `char *`, that means the *pointer value* is hashed, not the pointed-to contents — two identical strings at different addresses are different keys. Use `HASHMAP_STR_DEFINE` for string keys.
+
+### String-Keyed HashMap (new in 0.2.0)
+
+`HASHMAP_STR_DEFINE(V)` defines `HashMap_str_V` with content-hashed `char *` keys:
+
+```c
+#include <cyan/hashmap.h>
+
+OPTION_DEFINE(i32);        // Required before HASHMAP_STR_DEFINE(i32)
+HASHMAP_STR_DEFINE(i32);   // HashMap_str_i32
+
+i32 main(void) {
+    HashMap_str_i32 ages = hashmap_str_i32_new();
+    
+    // insert COPIES the key — the map owns its copy
+    char name[] = "alice";
+    hashmap_str_i32_insert(&ages, name, 30);
+    name[0] = 'A';  // Safe: the map's key copy is unaffected
+    
+    // Lookup is by content, not by pointer
+    Option_i32 age = hashmap_str_i32_get(&ages, "alice");  // Some(30)
+    
+    if (hashmap_str_i32_contains(&ages, "alice")) {
+        printf("alice is %d\n", unwrap(age));
+    }
+    
+    // remove and free release the map's key copies
+    hashmap_str_i32_remove(&ages, "alice");
+    hashmap_str_i32_free(&ages);
+    return 0;
+}
+```
+
+**Key ownership rules:**
+- `hashmap_str_V_insert` copies the key string; the caller keeps ownership of the original.
+- `hashmap_str_V_remove` and `hashmap_str_V_free` free the map's key copies.
+- Keys are hashed and compared by content, so heap strings, stack buffers, and literals all work.
+
+**String-Keyed HashMap API:** `hashmap_str_V_new()`, `hashmap_str_V_insert(m, key, value)`, `hashmap_str_V_get(m, key)`, `hashmap_str_V_contains(m, key)`, `hashmap_str_V_remove(m, key)`, `hashmap_str_V_len(m)`, `hashmap_str_V_free(m)` — same shapes as the generic map.
+
+---
+
+### New in 0.3.0: iteration macro
+
+```c
+HASHMAP_ITER_DEFINE(i32, i32);   // also defines MapPair_i32_i32
+
+MapPair_i32_i32 pair;
+MAP_FOREACH(i32, i32, m, pair) {
+    printf("%d -> %d\n", pair.key, pair.value);   // break/continue work normally
+}
+```
+
+</details>
+
+<details>
+<summary><b>HashSet</b> — membership testing with HashMap's engine</summary>
+
+Type-safe hash sets sharing HashMap's open-addressing design (power-of-two
+capacity, tombstones, load-factor resizing, optional custom `hash_fn`/`equal_fn`).
+No `OPTION_DEFINE` prerequisite.
+
+```c
+#include <cyan/hashset.h>
+
+HASHSET_DEFINE(i32);
+HASHSET_ITER_DEFINE(i32);   // optional: iteration support
+
+HashSet_i32 seen = hashset_i32_new();
+hashset_i32_add(&seen, 42);        // true  (newly added)
+hashset_i32_add(&seen, 42);        // false (already present)
+hashset_i32_contains(&seen, 42);   // true
+hashset_i32_remove(&seen, 42);     // true  (was present)
+
+i32 item;
+SET_FOREACH(i32, seen, item) {     // pre-declare item; break/continue work
+    printf("%d\n", item);
+}
+hashset_i32_free(&seen);
+```
+
+| Function / Macro | Description |
+|------------------|-------------|
+| `hashset_T_new()` | Create empty set |
+| `hashset_T_add(&s, x)` / `SET_ADD(T, s, x)` | Add; returns `true` if newly added |
+| `hashset_T_contains(&s, x)` / `SET_CONTAINS(T, s, x)` | Membership test |
+| `hashset_T_remove(&s, x)` / `SET_REMOVE(T, s, x)` | Remove; returns `true` if it was present |
+| `hashset_T_len(&s)` / `SET_LEN(T, s)` | Number of elements |
+| `hashset_T_free(&s)` / `SET_FREE(T, s)` | Free all memory |
+| `hashset_T_iter(&s)` / `hashset_T_iter_next(&it)` | Explicit iterator |
+| `SET_FOREACH(T, s, item)` | Iteration loop macro |
+
+Like `HASHMAP_DEFINE`, elements are hashed by their raw bytes — the pointer
+caveat for `char *` elements applies here too.
+
+</details>
+
+<details>
+<summary><b>Functional</b> — map / filter / reduce / foreach</summary>
 
 Higher-order functions for declarative data transformation. The canonical names are `cyan_map`, `cyan_filter`, `cyan_reduce`, and `cyan_foreach`; the short aliases `map`, `filter`, `reduce`, and `foreach` are enabled by default and can be suppressed with `#define CYAN_NO_SHORT_NAMES` (the `cyan_*` names remain available).
 
@@ -1049,7 +969,10 @@ vec_foreach_i32(&v, print_i32);
 
 ---
 
-## Defer (Automatic Cleanup)
+</details>
+
+<details>
+<summary><b>Defer</b> — scope-exit cleanup, RAII-style</summary>
 
 Scope-based resource cleanup using GCC/Clang's cleanup attribute.
 
@@ -1099,7 +1022,10 @@ i32 main(void) {
 
 ---
 
-## Smart Pointers
+</details>
+
+<details>
+<summary><b>Smart Pointers</b> — unique / shared / weak with auto-release</summary>
 
 Automatic memory management with unique and shared ownership semantics.
 
@@ -1225,55 +1151,10 @@ Macros take the pointee type first:
 
 ---
 
-## Pattern Matching
+</details>
 
-Ergonomic handling of Option and Result types.
-
-```c
-#include <cyan/match.h>
-
-OPTION_DEFINE(i32);
-RESULT_DEFINE(i32, const_charp);
-
-i32 main(void) {
-    // === Option Matching (statement form) ===
-    Option_i32 opt = Some(i32, 42);
-    
-    match_option(opt, i32, val,
-        { printf("Got value: %d\n", val); },
-        { printf("No value\n"); }
-    );
-    
-    // === Option Matching (expression form) ===
-    i32 doubled = match_option_expr(opt, i32, i32, v, v * 2, 0);
-    
-    // === Result Matching (statement form) ===
-    Result_i32_const_charp res = Ok(i32, const_charp, 100);
-    
-    match_result(res, i32, const_charp, val, e,
-        { printf("Success: %d\n", val); },
-        { printf("Error: %s\n", e); }
-    );
-    
-    // === Result Matching (expression form) ===
-    i32 value = match_result_expr(res, i32, const_charp, i32, v, e, v * 2, -1);
-    
-    return 0;
-}
-```
-
-**Pattern Matching API:**
-
-| Macro | Description |
-|-------|-------------|
-| `match_option(opt, T, var, some_branch, none_branch)` | Match Option (statement) |
-| `match_option_expr(opt, T, T_out, var, some_expr, none_expr)` | Match Option (expression) |
-| `match_result(res, T, E, ok_var, err_var, ok_branch, err_branch)` | Match Result (statement) |
-| `match_result_expr(res, T, E, T_out, ok_var, err_var, ok_expr, err_expr)` | Match Result (expression) |
-
----
-
-## Coroutines
+<details>
+<summary><b>Coroutines (experimental)</b> — stackful cooperative multitasking over ucontext</summary>
 
 Stackful cooperative multitasking using POSIX ucontext.
 
@@ -1351,7 +1232,10 @@ i32 main(void) {
 
 ---
 
-## Channels
+</details>
+
+<details>
+<summary><b>Channels</b> — CSP-style communication, coroutine-aware</summary>
 
 CSP-style communication primitives for message passing.
 
@@ -1450,97 +1334,44 @@ Channel functions are NULL-safe: sending on a NULL channel returns `CHAN_CLOSED`
 
 ---
 
-## Method-Style Macros
+### New in 0.3.0: coroutine integration (CSP)
 
-Every Cyan collection type pairs its generated functions with uppercase convenience macros. The macros follow a single **type-first convention**: the type parameter comes first, exactly as it does in constructors like `Some(i32, 42)` or `Ok(i32, const_charp, val)`.
-
-```c
-VEC_PUSH(i32, v, 42);      // mirrors Some(i32, 42)
-MAP_GET(i32, i32, m, key); // mirrors Ok/Err's (T, E, ...) ordering
-```
-
-The macros are zero-cost aliases: each one expands directly to a call to the corresponding generated function (`VEC_PUSH(i32, v, 42)` becomes `vec_i32_push(&v, 42)`), so there is no indirection and no runtime overhead, and every argument is evaluated exactly once. Since 0.2.0, Cyan types are plain structs — an `Option_i32` is just a `bool` plus an `i32`, a `Vec_i32` is just `data` + `len` + `cap`. There are no embedded function pointers or vtables of any kind.
-
-### Two Ways to Call Operations
+In single-threaded builds, a blocking channel operation called **inside a
+coroutine** yields and retries instead of returning `CHAN_WOULD_BLOCK`/`None`.
+Drive the coroutines with `coro_run` for Go-style CSP:
 
 ```c
-#include <cyan/vector.h>
+CHANNEL_DEFINE(i32);
+static Channel_i32 *ch;
 
-OPTION_DEFINE(i32);
-VECTOR_DEFINE(i32);
-
-i32 main(void) {
-    Vec_i32 v = vec_i32_new();
-    
-    // 1. Standalone function (traditional)
-    vec_i32_push(&v, 42);
-    
-    // 2. Convenience macro (type-first, expands to the call above)
-    VEC_PUSH(i32, v, 42);
-    
-    // Both are equivalent!
-    
-    vec_i32_free(&v);
-    return 0;
+static void producer(Coro *self, void *arg) {
+    for (i32 i = 1; i <= 5; i++) chan_i32_send(ch, i * 10);  // rendezvous
+    chan_i32_close(ch);
 }
-```
-
-The same pattern applies to every container. For a `HashMap`, both type parameters are passed:
-
-```c
-HashMap_i32_i32 m = hashmap_i32_i32_new();
-
-hashmap_i32_i32_insert(&m, 1, 100);   // Function style
-MAP_INSERT(i32, i32, m, 2, 200);      // Macro style
-
-Option_i32 val = MAP_GET(i32, i32, m, 1);
-MAP_FREE(i32, i32, m);
-```
-
-Monomorphic types (`String`) and typeless-accessor macros (`OPT_*`, `RES_*`) take no type argument, since the member layout is the same for every instantiation. See each type's section above for its full macro table.
-
-### Complete Example
-
-```c
-#include <cyan/cyan.h>
-
-OPTION_DEFINE(i32);
-VECTOR_DEFINE(i32);
-HASHMAP_DEFINE(i32, i32);
-
-i32 main(void) {
-    // Vector with convenience macros
-    Vec_i32 nums = vec_i32_new();
-    VEC_PUSH(i32, nums, 10);
-    VEC_PUSH(i32, nums, 20);
-    VEC_PUSH(i32, nums, 30);
-    
-    printf("Vector length: %zu\n", VEC_LEN(i32, nums));
-    
-    Option_i32 elem = VEC_GET(i32, nums, 1);
-    if (OPT_IS_SOME(elem)) {
-        printf("Element at 1: %d\n", OPT_UNWRAP(elem));
+static void consumer(Coro *self, void *arg) {
+    for (;;) {
+        Option_i32 v = chan_i32_recv(ch);   // yields until a value arrives
+        if (is_none(v)) break;
+        printf("got %d\n", unwrap(v));
     }
-    
-    // HashMap with convenience macros
-    HashMap_i32_i32 scores = hashmap_i32_i32_new();
-    MAP_INSERT(i32, i32, scores, 1, 100);
-    MAP_INSERT(i32, i32, scores, 2, 200);
-    
-    if (MAP_CONTAINS(i32, i32, scores, 1)) {
-        Option_i32 score = MAP_GET(i32, i32, scores, 1);
-        printf("Score for 1: %d\n", OPT_UNWRAP_OR(score, 0));
-    }
-    
-    VEC_FREE(i32, nums);
-    MAP_FREE(i32, i32, scores);
-    return 0;
 }
+
+ch = chan_i32_new(0);                        // capacity 0: unbuffered
+Coro *cs[] = { coro_new(producer, NULL, 0), coro_new(consumer, NULL, 0) };
+bool ok = coro_run(cs, 2);                   // false would mean deadlock
 ```
 
----
+`coro_run` detects deadlock: if a full pass resumes coroutines but none
+finishes and no channel makes progress, it returns `false`. Coroutines that
+yield repeatedly without channel traffic should call `coro_mark_progress()`.
+Everything (coroutines, channels, `coro_run`) must live in one translation
+unit. Outside coroutines — and for `try_send`/`try_recv` — single-threaded
+behavior is unchanged.
 
-## Serialization
+</details>
+
+<details>
+<summary><b>Serialization</b> — S-expressions: atoms, symbols, nested lists, round-trip</summary>
 
 Text-based serialization using an S-expression format. Alongside the scalar helpers below, 0.2.0 adds a full S-expression tree API (`SExp`) that can parse, build, compare, and serialize arbitrarily nested lists.
 
@@ -1683,8 +1514,428 @@ As of 0.2.0 this grammar is fully implemented: `parse_sexp` handles every produc
 
 ---
 
-## Configuration
+</details>
 
+<details>
+<summary><b>Bit-Width Integers</b> — Zig-style <code>uN</code>/<code>iN</code> wrap-around integers</summary>
+
+Zig-inspired integer types with arbitrary bit widths (1-64 bits). Define custom unsigned integers with `UINT_DEFINE(N)` and signed integers with `INT_DEFINE(N)`.
+
+```c
+#include <cyan/bitint.h>
+
+// Define custom bit-width types
+UINT_DEFINE(6);   // u6: 6-bit unsigned (0-63)
+UINT_DEFINE(12);  // u12: 12-bit unsigned (0-4095)
+INT_DEFINE(6);    // i6: 6-bit signed (-32 to 31)
+INT_DEFINE(12);   // i12: 12-bit signed (-2048 to 2047)
+
+i32 main(void) {
+    // Unsigned integers - values are masked to fit
+    u6 val = u6_new(42);           // 42
+    u6 overflow = u6_new(100);     // 36 (100 & 0x3F)
+    printf("Value: %u\n", u6_get(&val));
+    
+    // Arithmetic operations (results masked to N bits)
+    u6 a = u6_new(30);
+    u6 b = u6_new(40);
+    u6 sum = u6_add(a, b);         // 6 (70 wraps at 64)
+    
+    // Bitwise operations
+    u6 masked = u6_and(a, b);
+    u6 shifted = u6_shl(a, 2);
+    
+    // Signed integers with sign extension
+    i6 pos = i6_new(20);
+    i6 neg = i6_new(-15);
+    i6 diff = i6_sub(pos, neg);    // Wraps in 6-bit signed range
+    i6 negated = i6_neg(pos);      // -20
+    
+    // Min/max values
+    u6 max_u6 = u6_max();          // 63
+    i6 min_i6 = i6_min();          // -32
+    
+    return 0;
+}
+```
+
+**Unsigned Integer API (UINT_DEFINE):**
+
+| Function | Description |
+|----------|-------------|
+| `uN_new(value)` | Create N-bit unsigned integer (value masked to N bits) |
+| `uN_get(ptr)` | Get value as backing type |
+| `uN_raw(ptr)` | Get raw backing value |
+| `uN_add(a, b)` | Add two values (result masked) |
+| `uN_sub(a, b)` | Subtract two values (result masked) |
+| `uN_mul(a, b)` | Multiply two values (result masked) |
+| `uN_and(a, b)` | Bitwise AND |
+| `uN_or(a, b)` | Bitwise OR |
+| `uN_xor(a, b)` | Bitwise XOR |
+| `uN_not(a)` | Bitwise NOT (masked to N bits) |
+| `uN_shl(a, shift)` | Left shift (result masked) |
+| `uN_shr(a, shift)` | Right shift |
+| `uN_eq(a, b)` | Equality comparison |
+| `uN_lt(a, b)` | Less than comparison |
+| `uN_le(a, b)` | Less than or equal comparison |
+| `uN_max()` | Maximum value (2^N - 1) |
+| `uN_min()` | Minimum value (0) |
+
+**Signed Integer API (INT_DEFINE):**
+
+| Function | Description |
+|----------|-------------|
+| `iN_new(value)` | Create N-bit signed integer (sign-extended) |
+| `iN_get(ptr)` | Get sign-extended value |
+| `iN_add(a, b)` | Add two values |
+| `iN_sub(a, b)` | Subtract two values |
+| `iN_mul(a, b)` | Multiply two values |
+| `iN_neg(a)` | Negate value |
+| `iN_eq(a, b)` | Equality comparison |
+| `iN_lt(a, b)` | Less than comparison |
+| `iN_le(a, b)` | Less than or equal comparison |
+| `iN_max()` | Maximum value (2^(N-1) - 1) |
+| `iN_min()` | Minimum value (-2^(N-1)) |
+
+**Backing Type Selection:**
+
+| Bit Width | Unsigned Backing | Signed Backing |
+|-----------|------------------|----------------|
+| 1-8       | u8               | i8             |
+| 9-16      | u16              | i16            |
+| 17-32     | u32              | i32            |
+| 33-64     | u64              | i64            |
+
+---
+
+</details>
+
+<details>
+<summary><b>Bitset</b> — fixed-size flag collections with named flags</summary>
+
+Fixed-size bit collections for efficient flag management. Define bitsets with `BITSET_DEFINE(N)` for N bits (1-64).
+
+```c
+#include <cyan/bitset.h>
+
+BITSET_DEFINE(8);   // Bitset_8: 8-bit bitset
+BITSET_DEFINE(16);  // Bitset_16: 16-bit bitset
+
+i32 main(void) {
+    // Create empty bitset
+    Bitset_8 bs = bitset_8_new();
+    
+    // Set, clear, toggle bits
+    bitset_8_set(&bs, 0);      // Set bit 0
+    bitset_8_set(&bs, 3);      // Set bit 3
+    bitset_8_toggle(&bs, 3);   // Toggle bit 3 (now clear)
+    bitset_8_clear(&bs, 0);    // Clear bit 0
+    
+    // Query bits
+    bool is_set = bitset_8_get(&bs, 0);  // false
+    
+    // Create from raw value
+    Bitset_8 set1 = bitset_8_from_raw(0b00001111);  // Bits 0-3
+    Bitset_8 set2 = bitset_8_from_raw(0b00111100);  // Bits 2-5
+    
+    // Set operations
+    Bitset_8 union_set = bitset_8_union(&set1, &set2);      // OR
+    Bitset_8 intersect = bitset_8_intersect(&set1, &set2);  // AND
+    Bitset_8 diff = bitset_8_diff(&set1, &set2);            // set1 & ~set2
+    Bitset_8 comp = bitset_8_complement(&set1);             // ~set1 (masked)
+    
+    // Utility functions
+    u8 count = bitset_8_count(&bs);     // Number of set bits
+    bool all = bitset_8_all(&bs);       // All bits set?
+    bool any = bitset_8_any(&bs);       // Any bit set?
+    bool none = bitset_8_none(&bs);     // No bits set?
+    bool equal = bitset_8_eq(&set1, &set2);  // Equality check
+    
+    return 0;
+}
+```
+
+**Bitset API:**
+
+| Function | Description |
+|----------|-------------|
+| `bitset_N_new()` | Create bitset with all bits cleared |
+| `bitset_N_from_raw(value)` | Create bitset from raw integer value |
+| `bitset_N_set(bs, index)` | Set bit at index (panics if out of bounds) |
+| `bitset_N_clear(bs, index)` | Clear bit at index |
+| `bitset_N_get(bs, index)` | Get bit at index (returns bool) |
+| `bitset_N_toggle(bs, index)` | Toggle bit at index |
+| `bitset_N_union(a, b)` | Union of two bitsets (OR) |
+| `bitset_N_intersect(a, b)` | Intersection of two bitsets (AND) |
+| `bitset_N_diff(a, b)` | Difference (a AND NOT b) |
+| `bitset_N_complement(bs)` | Complement (NOT, masked to N bits) |
+| `bitset_N_eq(a, b)` | Check equality |
+| `bitset_N_count(bs)` | Count set bits (popcount) |
+| `bitset_N_all(bs)` | Check if all N bits are set |
+| `bitset_N_any(bs)` | Check if any bit is set |
+| `bitset_N_none(bs)` | Check if no bits are set |
+
+**Convenience Macros:**
+
+| Macro | Description |
+|-------|-------------|
+| `BS_SET(N, bs, i)` | Set bit at index |
+| `BS_CLEAR(N, bs, i)` | Clear bit at index |
+| `BS_GET(N, bs, i)` | Get bit at index |
+| `BS_TOGGLE(N, bs, i)` | Toggle bit at index |
+| `BS_UNION(N, a, b)` | Union of two bitsets |
+| `BS_INTERSECT(N, a, b)` | Intersection of two bitsets |
+| `BS_DIFF(N, a, b)` | Difference of two bitsets |
+| `BS_COMPLEMENT(N, bs)` | Complement of bitset |
+| `BS_EQ(N, a, b)` | Check equality |
+| `BS_COUNT(N, bs)` | Count set bits |
+| `BS_ALL(N, bs)` | Check if all bits set |
+| `BS_ANY(N, bs)` | Check if any bit set |
+| `BS_NONE(N, bs)` | Check if no bits set |
+
+### Named Flags
+
+Define named flags with `FLAGS_DEFINE` for type-safe flag manipulation:
+
+```c
+#include <cyan/bitset.h>
+
+// Define named flags
+FLAGS_DEFINE(Permissions, READ, WRITE, EXECUTE, HIDDEN);
+// Creates: Permissions_READ = 0, Permissions_WRITE = 1, etc.
+// Creates: Permissions_COUNT = 4
+
+BITSET_DEFINE(4);  // Bitset for 4 flags
+
+i32 main(void) {
+    Bitset_4 perms = bitset_4_new();
+    
+    // Set flags using names
+    FLAGS_SET(4, perms, Permissions_READ);
+    FLAGS_SET(4, perms, Permissions_WRITE);
+    
+    // Check flags
+    if (FLAGS_HAS(4, perms, Permissions_READ)) {
+        printf("Has read permission\n");
+    }
+    
+    // Clear flags
+    FLAGS_CLEAR(4, perms, Permissions_WRITE);
+    
+    return 0;
+}
+```
+
+**Named Flags API:**
+
+| Macro | Description |
+|-------|-------------|
+| `FLAGS_DEFINE(Name, ...)` | Define named flags with sequential bit positions |
+| `FLAGS_SET(N, bs, flag)` | Set the specified flag |
+| `FLAGS_CLEAR(N, bs, flag)` | Clear the specified flag |
+| `FLAGS_HAS(N, bs, flag)` | Check if flag is set |
+
+---
+
+</details>
+
+<details>
+<summary><b>Primitive Types</b> — i32 / u64 / f32 and friends</summary>
+
+Concise type names with predictable sizes, inspired by Rust and Zig.
+
+```c
+#include <cyan/common.h>
+
+// Fixed-width signed integers
+i8  a = 127;           // int8_t
+i16 b = 32767;         // int16_t
+i32 c = 2147483647;    // int32_t
+i64 d = 9223372036854775807LL;  // int64_t
+
+// Fixed-width unsigned integers
+u8  e = 255;           // uint8_t
+u16 f = 65535;         // uint16_t
+u32 g = 4294967295U;   // uint32_t
+u64 h = 18446744073709551615ULL;  // uint64_t
+
+// Pointer-sized integers
+usize len = sizeof(array) / sizeof(array[0]);  // size_t compatible
+isize offset = -100;   // signed pointer-sized
+
+// Floating-point
+f32 pi_f = 3.14159f;   // float
+f64 pi_d = 3.14159265358979;  // double
+```
+
+For type-erased pointers, use plain `void *` (the `any` alias was removed in 0.2.0).
+
+**Available Types:**
+
+| Category | Types |
+|----------|-------|
+| Signed integers | `i8`, `i16`, `i32`, `i64`, `i128`* |
+| Unsigned integers | `u8`, `u16`, `u32`, `u64`, `u128`* |
+| Pointer-sized | `isize`, `usize` |
+| Floating-point | `f16`*, `f32`, `f64`, `f80`*, `f128`* |
+| Special | `bool` |
+
+*Platform-dependent. Check `CYAN_HAS_INT128`, `CYAN_HAS_FLOAT16`, `CYAN_HAS_FLOAT80`, `CYAN_HAS_FLOAT128` macros.
+
+---
+
+</details>
+
+<details>
+<summary><b>Panic Handler</b> — what panics, and how to override it</summary>
+
+The panic handler is invoked for unrecoverable errors in the Cyan library. When a panic occurs, the default behavior is to print diagnostic information (file, line number, and error message) to stderr and then abort the program.
+
+**Default Behavior:**
+
+```c
+// Default panic output format:
+// PANIC at filename.c:42: error message
+```
+
+The default `CYAN_PANIC` macro prints the file name, line number, and a descriptive message before calling `abort()`. This provides clear debugging information when something goes wrong.
+
+### Panic Trigger Scenarios
+
+Panics are triggered in the following situations:
+
+| Scenario | Description |
+|----------|-------------|
+| `unwrap()` on None | Attempting to extract a value from an empty Option |
+| `unwrap_ok()` on Err | Attempting to extract a success value from an error Result |
+| `unwrap_err()` on Ok | Attempting to extract an error value from a success Result |
+| Memory allocation failure | When `malloc()` or `realloc()` returns NULL in collection operations |
+| Resuming finished coroutine | Attempting to resume a coroutine that has already completed |
+
+### Custom Panic Handler
+
+You can override the default panic behavior by defining `CYAN_PANIC` before including any Cyan headers:
+
+```c
+// Define custom panic handler BEFORE including Cyan headers
+#define CYAN_PANIC(msg) do { \
+    fprintf(stderr, "[FATAL] %s:%d - %s\n", __FILE__, __LINE__, msg); \
+    /* Add custom logging, cleanup, or crash reporting here */ \
+    abort(); \
+} while(0)
+
+#include <cyan/cyan.h>
+
+// Now all panics will use your custom handler
+```
+
+**Important:** The custom handler must be defined before any Cyan header is included, as the panic macro is checked with `#ifndef` and only defined if not already present.
+
+### Panic API
+
+| Macro | Description |
+|-------|-------------|
+| `CYAN_PANIC(msg)` | Trigger a panic with the given message. Prints file, line, and message to stderr, then calls `abort()`. Can be overridden by user. |
+| `CYAN_PANIC_EXPR(msg, dummy)` | Internal helper for panics in expression contexts. Used where a value must be returned (e.g., ternary operators). The dummy value satisfies type requirements but is never returned. |
+
+---
+
+</details>
+
+<details>
+<summary><b>Method-Style Macros</b> — the type-first macro convention</summary>
+
+Every Cyan collection type pairs its generated functions with uppercase convenience macros. The macros follow a single **type-first convention**: the type parameter comes first, exactly as it does in constructors like `Some(i32, 42)` or `Ok(i32, const_charp, val)`.
+
+```c
+VEC_PUSH(i32, v, 42);      // mirrors Some(i32, 42)
+MAP_GET(i32, i32, m, key); // mirrors Ok/Err's (T, E, ...) ordering
+```
+
+The macros are zero-cost aliases: each one expands directly to a call to the corresponding generated function (`VEC_PUSH(i32, v, 42)` becomes `vec_i32_push(&v, 42)`), so there is no indirection and no runtime overhead, and every argument is evaluated exactly once. Since 0.2.0, Cyan types are plain structs — an `Option_i32` is just a `bool` plus an `i32`, a `Vec_i32` is just `data` + `len` + `cap`. There are no embedded function pointers or vtables of any kind.
+
+### Two Ways to Call Operations
+
+```c
+#include <cyan/vector.h>
+
+OPTION_DEFINE(i32);
+VECTOR_DEFINE(i32);
+
+i32 main(void) {
+    Vec_i32 v = vec_i32_new();
+    
+    // 1. Standalone function (traditional)
+    vec_i32_push(&v, 42);
+    
+    // 2. Convenience macro (type-first, expands to the call above)
+    VEC_PUSH(i32, v, 42);
+    
+    // Both are equivalent!
+    
+    vec_i32_free(&v);
+    return 0;
+}
+```
+
+The same pattern applies to every container. For a `HashMap`, both type parameters are passed:
+
+```c
+HashMap_i32_i32 m = hashmap_i32_i32_new();
+
+hashmap_i32_i32_insert(&m, 1, 100);   // Function style
+MAP_INSERT(i32, i32, m, 2, 200);      // Macro style
+
+Option_i32 val = MAP_GET(i32, i32, m, 1);
+MAP_FREE(i32, i32, m);
+```
+
+Monomorphic types (`String`) and typeless-accessor macros (`OPT_*`, `RES_*`) take no type argument, since the member layout is the same for every instantiation. See each type's section above for its full macro table.
+
+### Complete Example
+
+```c
+#include <cyan/cyan.h>
+
+OPTION_DEFINE(i32);
+VECTOR_DEFINE(i32);
+HASHMAP_DEFINE(i32, i32);
+
+i32 main(void) {
+    // Vector with convenience macros
+    Vec_i32 nums = vec_i32_new();
+    VEC_PUSH(i32, nums, 10);
+    VEC_PUSH(i32, nums, 20);
+    VEC_PUSH(i32, nums, 30);
+    
+    printf("Vector length: %zu\n", VEC_LEN(i32, nums));
+    
+    Option_i32 elem = VEC_GET(i32, nums, 1);
+    if (OPT_IS_SOME(elem)) {
+        printf("Element at 1: %d\n", OPT_UNWRAP(elem));
+    }
+    
+    // HashMap with convenience macros
+    HashMap_i32_i32 scores = hashmap_i32_i32_new();
+    MAP_INSERT(i32, i32, scores, 1, 100);
+    MAP_INSERT(i32, i32, scores, 2, 200);
+    
+    if (MAP_CONTAINS(i32, i32, scores, 1)) {
+        Option_i32 score = MAP_GET(i32, i32, scores, 1);
+        printf("Score for 1: %d\n", OPT_UNWRAP_OR(score, 0));
+    }
+    
+    VEC_FREE(i32, nums);
+    MAP_FREE(i32, i32, scores);
+    return 0;
+}
+```
+
+---
+
+</details>
+
+## Configuration
 Configure the library by defining macros before including headers:
 
 ```c
@@ -1726,7 +1977,6 @@ Configure the library by defining macros before including headers:
 ```
 
 ## Feature Detection
-
 Check for available features at compile time:
 
 ```c
@@ -1761,7 +2011,6 @@ Check for available features at compile time:
 ```
 
 ## Requirements
-
 - C11 compatible compiler (GCC, Clang, or MSVC with C11 support)
 - GCC/Clang recommended for:
   - `defer` and auto-cleanup features (uses `__attribute__((cleanup))`)
@@ -1771,39 +2020,51 @@ Check for available features at compile time:
 - pthreads for thread-safe channels
 - **macOS note:** for the coroutine `ucontext` APIs to be visible, either include Cyan headers before any system header, or compile with `-D_XOPEN_SOURCE=700` (the project Makefile does this)
 
-## Building Tests
+## Building and Testing
 
 ```bash
-make test
+make test              # 141 property-based tests (theft, vendored submodule)
+make test SANITIZE=1   # the same suite under AddressSanitizer + UBSan
 ```
+
+Property-based testing via [theft](https://github.com/silentbicycle/theft)
+(`git submodule update --init` on first clone).
 
 ## Examples
 
-See the `examples/` directory for complete example programs:
+Twenty runnable programs in [`examples/`](examples/), each an API tour that
+ends with a realistic "putting it together" scenario:
 
-| Example | Description |
-|---------|-------------|
-| `00_primitive_types.c` | Primitive type aliases (i32, u64, f32, etc.) |
-| `01_option_basics.c` | Option type for nullable values |
-| `02_result_error_handling.c` | Result type for error handling |
-| `03_vector_collections.c` | Dynamic arrays with bounds checking |
-| `04_defer_cleanup.c` | Automatic resource cleanup |
-| `05_smart_pointers.c` | Unique and shared pointers |
-| `06_pattern_matching.c` | Pattern matching on Option/Result |
-| `07_functional.c` | Functional primitives (map, filter, reduce) |
-| `08_vtable_api.c` | Method-style convenience macros |
-| `09_panic_handler.c` | Panic handler behavior and customization |
-| `16_bitset_integers.c` | Bitsets and custom bit-width integers |
+| Example | Shows |
+|---------|-------|
+| `00_primitive_types.c` | Type aliases; parsing a binary sensor packet |
+| `01_option_basics.c` | Options; a config lookup chain with `and_then`/`or_else` |
+| `02_result_error_handling.c` | Results; `try_ok` order-validation pipeline |
+| `03_vector_collections.c` | Vectors; a sorted top-N scoreboard |
+| `04_defer_cleanup.c` | Defer; a resource pyramid with early returns |
+| `05_smart_pointers.c` | Unique/shared/weak; a cache with weak observers |
+| `06_pattern_matching.c` | `match_*`; a connection state machine |
+| `07_functional.c` | map/filter/reduce; a sensor data pipeline |
+| `08_method_macros.c` | The two call styles; type sizes without vtables |
+| `09_panic_handler.c` | Panics and custom handlers |
+| `10_channel_communication.c` | Channels; a bounded work queue |
+| `11_hashmap_dictionary.c` | Maps incl. string keys; an office phone book |
+| `12_serialize_parsing.c` | S-expressions; a config round-trip |
+| `13_slice_views.c` | Slices; a zero-copy tokenizer |
+| `14_string_manipulation.c` | Strings; a CSV line parser |
+| `15_hashset_membership.c` | HashSet; dedupe and set intersection |
+| `16_bitset_integers.c` | Bitsets/uN; permissions and a saturating counter |
+| `17_coro_channels.c` | **CSP**: producers/consumers under `coro_run` |
+| `18_result_pipeline.c` | A realistic config-file parsing pipeline |
+| `19_word_count.c` | Capstone: strings + str-map + vec sort, top-5 words |
 
-Build and run examples:
 ```bash
 cd examples
-make
-make run  # Run all examples
+make        # build all
+make run    # run all
 ```
 
 ## Changelog
-
 ### 0.3.0
 
 **Additions:**
@@ -1842,5 +2103,4 @@ make run  # Run all examples
 **Fixes:** 0.1.x -> 0.2.0 also includes the fixes from the 37-bug audit, among them: `defer_free` now NULLs the pointer after freeing, unbuffered channels get correct rendezvous/`CHAN_WOULD_BLOCK` semantics, overflow guards in growth and parsing paths, and single-evaluation convenience macros.
 
 ## License
-
 MIT License - see LICENSE file for details.
