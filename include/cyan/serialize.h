@@ -87,7 +87,7 @@ static inline char *serialize_int(int val) {
  * Uses enough precision to round-trip the value.
  * 
  * Example:
- *   char *s = serialize_double(3.14);  // Returns "3.14"
+ *   char *s = serialize_double(3.14);  // "%.17g": "3.1400000000000001"
  *   free(s);
  */
 static inline char *serialize_double(double val) {

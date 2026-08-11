@@ -36,8 +36,7 @@
  * @param N Number of bits (1-64)
  * 
  * Creates:
- * - Bitset_N struct with bits and vt fields
- * - BitsetVT_N vtable struct
+ * - Bitset_N struct with a bits field
  * - bitset_N_new() constructor (all bits cleared)
  * - bitset_N_from_raw(value) constructor from raw value
  * - Bit manipulation: set, clear, get, toggle

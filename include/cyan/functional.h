@@ -13,7 +13,8 @@
  *   size_t out_len;
  *   filter(arr, 5, out, &out_len, is_even);
  *   
- *   int sum = reduce(arr, 5, 0, add);
+ *   int sum;
+ *   reduce(sum, arr, 5, 0, add);
  */
 
 #ifndef CYAN_FUNCTIONAL_H
