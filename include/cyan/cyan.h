@@ -37,21 +37,6 @@
  * Feature Detection Macros
  *============================================================================*/
 
-/** @brief Defined when Option type is available */
-#define CYAN_HAS_OPTION 1
-
-/** @brief Defined when Result type is available */
-#define CYAN_HAS_RESULT 1
-
-/** @brief Defined when Vector type is available */
-#define CYAN_HAS_VECTOR 1
-
-/** @brief Defined when Slice type is available */
-#define CYAN_HAS_SLICE 1
-
-/** @brief Defined when functional primitives (map, filter, reduce) are available */
-#define CYAN_HAS_FUNCTIONAL 1
-
 /** @brief 1 when the defer mechanism is available (GCC nested functions or
  *  Clang blocks), 0 otherwise */
 #if defined(__GNUC__) || defined(__clang__)
@@ -67,32 +52,8 @@
 #define CYAN_HAS_CORO 0
 #endif
 
-/** @brief Defined when serialization is available */
-#define CYAN_HAS_SERIALIZE 1
-
-/** @brief Defined when smart pointers are available */
-#define CYAN_HAS_SMARTPTR 1
-
-/** @brief Defined when HashMap is available */
-#define CYAN_HAS_HASHMAP 1
-
 /** @brief Defined when HashSet is available */
 #define CYAN_HAS_HASHSET 1
-
-/** @brief Defined when dynamic String is available */
-#define CYAN_HAS_STRING 1
-
-/** @brief Defined when pattern matching macros are available */
-#define CYAN_HAS_MATCH 1
-
-/** @brief Defined when channels are available */
-#define CYAN_HAS_CHANNEL 1
-
-/** @brief Defined when custom bit-width integers are available */
-#define CYAN_HAS_BITINT 1
-
-/** @brief Defined when bitsets are available */
-#define CYAN_HAS_BITSET 1
 
 /*============================================================================
  * Compiler Feature Detection
